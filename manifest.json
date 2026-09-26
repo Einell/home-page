@@ -1,0 +1,10 @@
+{
+  "id": "qiaomu-home",
+  "name": "Qiaomu Home",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "A calm start page: search, create, and continue what you were reading, listening to, or asking.",
+  "author": "向阳乔木",
+  "authorUrl": "https://github.com/joeseesun",
+  "isDesktopOnly": false
+}
