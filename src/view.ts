@@ -1,3 +1,4 @@
+import { DragFeedback, dropAfter } from "./drag-feedback";
 import { editShortcutGroup, MoveShortcutModal, renderShortcutGroup } from "./shortcut-ui";
 import { shortcutModuleId } from "./shortcuts";
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
@@ -79,6 +80,10 @@ export class HomeView extends ItemView {
   private activePageId = "";
   private tabsSignature = "";
   private editing = false;
+  private dragFeedback!: DragFeedback;
+  private movedModule: string | null = null;
+  private movedShortcut: string | null = null;
+  markMovedShortcut(id: string): void { this.movedShortcut = id; }
   private dragging: { kind: "card" | "page"; id: string; pageId: string } | null = null;
   private readonly pageInstance = `qh-pages-${crypto.randomUUID()}`;
   private connections: unknown[] = [];
@@ -104,6 +109,7 @@ export class HomeView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("qh-root");
+    this.dragFeedback = new DragFeedback(root);
     const backdrop = root.createDiv({ cls: "qh-backdrop" });
     this.photoEl = backdrop.createDiv({ cls: "qh-photo" });
     backdrop.createDiv({ cls: "qh-shade" });
@@ -149,6 +155,7 @@ export class HomeView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.dragFeedback?.clear();
     this.searchGeneration++;
     this.sectionsGeneration++;
     this.photoGeneration++;
@@ -615,6 +622,7 @@ export class HomeView extends ItemView {
     if (!this.dragging && !this.shortcutDragging) return;
     this.shortcutDragging = false;
     this.dragging = null;
+    this.dragFeedback.clear();
     this.contentEl.querySelectorAll(".qh-dragging, .qh-drop-target").forEach((el) => el.removeClass("qh-dragging", "qh-drop-target"));
     this.refreshContent();
   }
@@ -626,23 +634,21 @@ export class HomeView extends ItemView {
       this.dragging = { kind, id, pageId };
       event.dataTransfer.setData("application/x-qiaomu-home-layout", id);
       event.dataTransfer.effectAllowed = "move";
-      target.addClass("qh-dragging");
+      this.dragFeedback.start(target, event, target.querySelector(".qh-card-title")?.textContent ?? target.textContent ?? "");
     });
     target.addEventListener("dragover", (event) => {
       const from = this.dragging;
       if (!from || from.kind !== kind || from.id === id || from.pageId !== pageId) return;
       event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      this.contentEl.querySelectorAll(".qh-drop-target").forEach((el) => el.removeClass("qh-drop-target"));
-      target.addClass("qh-drop-target");
+      this.dragFeedback.over(target, event, kind === "page" ? "x" : "y");
     });
-    target.addEventListener("dragleave", () => target.removeClass("qh-drop-target"));
+    target.addEventListener("dragleave", (event) => this.dragFeedback.leave(target, event));
     target.addEventListener("drop", (event) => {
       const from = this.dragging;
       if (!from || from.kind !== kind || from.id === id || from.pageId !== pageId) return;
       event.preventDefault(); event.stopPropagation();
       const rect = target.getBoundingClientRect();
-      const after = kind === "page" ? event.clientX > rect.left + rect.width / 2 : event.clientY > rect.top + rect.height / 2;
+      const after = dropAfter(kind === "page" ? "x" : "y", rect, event);
       let changed = false;
       if (kind === "page") changed = reorderPage(this.plugin.settings, from.id, id, after);
       else {
@@ -651,11 +657,23 @@ export class HomeView extends ItemView {
         if (page) changed = reorderModule(page, from.id, id, ids, after);
       }
       this.dragging = null;
-      target.removeClass("qh-drop-target");
-      if (changed) this.saveLayout();
+      this.dragFeedback.clear();
+      if (changed) {
+        this.movedModule = kind === "card" ? from.id : null;
+        if (kind === "card") {
+          const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+          const cards = Array.from(this.gridEl.querySelectorAll<HTMLElement>(".qh-card"));
+          if (page) for (const key of orderModules(page, cards.map((card) => card.dataset.module!))) {
+            const card = cards.find((entry) => entry.dataset.module === key);
+            if (card) this.gridEl.appendChild(card);
+          }
+        } else this.renderPages();
+        this.saveLayout();
+      }
     });
     handle.addEventListener("dragend", () => {
       this.dragging = null;
+      this.dragFeedback.clear();
       this.contentEl.querySelectorAll(".qh-dragging, .qh-drop-target").forEach((el) => el.removeClass("qh-dragging", "qh-drop-target"));
       this.refreshContent();
     });
@@ -712,11 +730,13 @@ export class HomeView extends ItemView {
     setIcon(options, "ellipsis"); hiddenLabel(options, t("pages.menu"));
     options.addEventListener("click", (event) => this.pageMenu(event, page.id));
     const tools = this.tabsEl.createDiv({ cls: "qh-layout-tools" });
-    const library = tools.createEl("button", { cls: "qh-layout-button", text: t("library.title") });
+    const library = tools.createEl("button", { cls: "qh-icon-button qh-layout-button" });
+    setIcon(library, "layout-grid"); hiddenLabel(library, t("library.title"));
     library.addEventListener("click", () => this.openLibrary());
-    const edit = tools.createEl("button", { cls: "qh-layout-button", text: t(this.editing ? "layout.done" : "layout.edit") });
+    const edit = tools.createEl("button", { cls: "qh-icon-button qh-layout-button" });
+    setIcon(edit, this.editing ? "check" : "pencil"); hiddenLabel(edit, t(this.editing ? "layout.done" : "layout.edit"));
     edit.setAttr("aria-pressed", String(this.editing));
-    edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.refreshContent(); });
+    edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.shortcutDragging = false; this.dragFeedback.clear(); this.refreshContent(); });
   }
 
   private refreshContent(): void {
@@ -760,7 +780,7 @@ export class HomeView extends ItemView {
       }
       this.renderRecommendations(next);
       for (const group of page.shortcutGroups) {
-        if (moduleOptions(this.plugin.settings, shortcutModuleId(group.id), page.id).visible) renderShortcutGroup(next, this.plugin, page.id, group, this.editing, (active) => { this.shortcutDragging = active; });
+        if (moduleOptions(this.plugin.settings, shortcutModuleId(group.id), page.id).visible) renderShortcutGroup(next, this.plugin, page.id, group, this.editing, this.dragFeedback, (active) => { this.shortcutDragging = active; });
       }
       const cards = Array.from(next.querySelectorAll<HTMLElement>(".qh-card"));
       const ids = cards.map((card) => card.dataset.module!);
@@ -769,6 +789,13 @@ export class HomeView extends ItemView {
         const card = cards.find((item) => item.dataset.module === id)!;
         this.decorateCard(card, id, page.id, ordered);
         next.appendChild(card);
+        if (id === this.movedModule) { card.addClass("qh-just-moved"); this.movedModule = null; }
+      }
+      if (this.movedShortcut) {
+        next.querySelectorAll<HTMLElement>("[data-shortcut]").forEach((element) => {
+          if (element.dataset.shortcut === this.movedShortcut) element.addClass("qh-just-moved");
+        });
+        this.movedShortcut = null;
       }
       if (!cards.length) {
         const empty = next.createDiv({ cls: "qh-page-empty" });

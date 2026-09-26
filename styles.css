@@ -862,3 +862,31 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 
 .qh-root .qh-shortcut-link:hover { background: var(--qh-hover); border-color: var(--qh-focus); }
 .qh-shortcut-cell.is-drag-target { outline: 1px solid var(--qh-focus); outline-offset: 2px; border-radius: 12px; }
+
+/* Progressive shortcut editor: choose a type, then a target; customization is optional. */
+.qh-shortcut-modal [hidden] { display: none !important; }
+.qh-shortcut-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 8px 0 16px; }
+.qh-shortcut-modal .qh-shortcut-type { display: flex; flex-direction: column; gap: 10px; height: auto; min-height: 92px; padding: 16px 8px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 10px; box-shadow: none; }
+.qh-shortcut-type svg { width: 24px; height: 24px; }
+.qh-shortcut-modal .qh-shortcut-type[aria-pressed="true"] { border-color: var(--interactive-accent); background: var(--background-modifier-hover); }
+.qh-shortcut-modal .qh-shortcut-type:focus-visible { outline: 1px solid var(--interactive-accent); outline-offset: 2px; }
+.qh-shortcut-modal .qh-shortcut-customize { box-shadow: none; background: transparent; padding: 8px 0; color: var(--text-muted); }
+.qh-shortcut-details { margin-top: 8px; }
+.qh-root .qh-layout-button { width: 36px; height: 36px; padding: 8px; flex: none; }
+.qh-root .qh-layout-button[aria-pressed="true"] { background: var(--qh-hover); border-color: var(--qh-focus); }
+.qh-layout-button svg { width: 18px; height: 18px; }
+.qh-root .qh-shortcut-grip { position: absolute; top: 2px; left: 2px; cursor: grab; width: 28px; height: 28px; }
+.qh-editing .qh-shortcut-link { cursor: pointer; }
+.qh-drag-preview { position: fixed; top: 8px; left: 8px; max-width: 260px; padding: 12px 16px; border-radius: 10px; background: var(--qh-popover); color: var(--qh-text); border: 1px solid var(--qh-border); box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 10000; pointer-events: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.qh-drop-marker { position: relative; }
+.qh-drop-marker::after { content: ""; position: absolute; background: var(--interactive-accent); border-radius: 2px; pointer-events: none; z-index: 2; }
+.qh-drop-marker[data-drop-axis="y"]::after { height: 2px; left: 0; right: 0; }
+.qh-drop-marker[data-drop-axis="y"][data-drop-side="before"]::after { top: -8px; }
+.qh-drop-marker[data-drop-axis="y"][data-drop-side="after"]::after { bottom: -8px; }
+.qh-drop-marker[data-drop-axis="x"]::after { width: 2px; top: 0; bottom: 0; }
+.qh-drop-marker[data-drop-axis="x"][data-drop-side="before"]::after { left: -6px; }
+.qh-drop-marker[data-drop-axis="x"][data-drop-side="after"]::after { right: -6px; }
+.qh-just-moved { animation: qh-moved 650ms ease-out; }
+@keyframes qh-moved { from { outline: 2px solid var(--interactive-accent); outline-offset: 2px; } to { outline: 2px solid transparent; outline-offset: 2px; } }
+@media (prefers-reduced-motion: reduce) { .qh-just-moved { animation: none; } }
+@container (max-width: 560px) { .qh-layout-tools { width: auto; margin-top: 0; } .qh-layout-tools .qh-layout-button { flex: none; } }

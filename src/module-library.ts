@@ -42,7 +42,7 @@ export class ModuleLibrary extends Modal {
   private baseModules(): HomeModule[] {
     const page = this.plugin.settings.pages.find((item) => item.id === this.pageId);
     return [...builtinModules(this.app), { id: "new-shortcuts", title: isChinese() ? "快捷方式" : "Shortcuts", source: "Home", icon: "link", description: isChinese() ? "自定义笔记、文件夹和网址入口。" : "Your notes, folders and websites.", status: "ready" },
-      ...(page?.shortcutGroups ?? []).map((group): HomeModule => ({ id: shortcutModuleId(group.id), title: group.name, source: "Home", icon: "link", description: isChinese() ? "已创建的快捷方式分组" : "Saved shortcut group", status: "ready", preview: group.items.map((item) => item.name || item.target) }))];
+      ...(page?.shortcutGroups ?? []).map((group): HomeModule => ({ id: shortcutModuleId(group.id), title: group.name, source: "Home", icon: "link", description: isChinese() ? "已添加的快捷方式" : "Saved shortcuts", status: "ready", preview: group.items.map((item) => item.name || item.target) }))];
   }
 
   private async load(): Promise<void> {
@@ -85,7 +85,7 @@ export class ModuleLibrary extends Modal {
       const added = item.id !== "new-shortcuts" && moduleOptions(this.plugin.settings, item.id, this.pageId).visible
         && (item.id !== "bookmarks" || Boolean(item.preview?.length) || Object.hasOwn(page.moduleOptions, item.id));
       const ready = item.status === "ready";
-      const label = item.id === "new-shortcuts" ? (isChinese() ? "新建分组" : "New group") : ready ? (added ? t("library.added") : t("library.add"))
+      const label = ready ? (added ? t("library.added") : t("library.add"))
         : item.status === "absent" ? t("library.install") : item.status === "disabled" ? t("library.enable") : t("legacy.retry");
       if (!ready) card.createDiv({ cls: "qh-library-status", text: t(item.status === "absent" ? "library.needsPlugin" : item.status === "disabled" ? "library.disabled" : "legacy.unavailable") });
       const button = card.createEl("button", { text: label });

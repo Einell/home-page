@@ -1,3 +1,4 @@
+import { DragFeedback, dropAfter } from "./drag-feedback";
 import { FuzzySuggestModal, Menu, Modal, Notice, Setting, TFile, TFolder, setIcon, type TAbstractFile } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { isChinese, t } from "./i18n";
@@ -32,53 +33,79 @@ export class ShortcutEditorModal extends Modal {
     const original = group?.items.find((item) => item.id === this.itemId);
     if ((this.groupId && !group) || (this.itemId && !original)) { this.close(); return; }
     let kind: ShortcutKind = original?.kind ?? "file", target = original?.target ?? "", name = original?.name ?? "", icon = original?.icon ?? defaultShortcutIcon(kind);
-    let title = L("常用入口", "Shortcuts");
-    if (!this.groupId) new Setting(this.contentEl).setName(L("分组名称", "Group name")).addText((input) => input.setValue(title).onChange((value) => { title = value; }));
-    const targetSlot = this.contentEl.createDiv();
-    const targetSetting = new Setting(targetSlot);
-    const targetField = targetSetting.controlEl;
-    const renderTarget = () => {
-      targetField.empty();
-      targetSetting.setName(kind === "url" ? L("网址", "Website") : L("目标", "Target"));
-      if (kind === "url") targetSetting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
-      else targetSetting.addButton((button) => button.setButtonText(target || L("选择…", "Choose…")).onClick(() => {
-        new TargetPicker(this.plugin, kind, (file) => { target = file.path; renderTarget(); }).open();
-      }));
-    };
-    const typeSetting = new Setting(this.contentEl).setName(L("类型", "Type")).addDropdown((dropdown) => dropdown.addOptions({ file: L("笔记 / 文件", "Note / file"), folder: L("文件夹", "Folder"), url: L("网址", "Website") }).setValue(kind).onChange((value) => {
-      const wasDefault = icon === defaultShortcutIcon(kind);
-      kind = value as ShortcutKind; target = "";
-      if (wasDefault) icon = defaultShortcutIcon(kind);
-      renderTarget(); renderIcons();
-    }));
-    targetSlot.before(typeSetting.settingEl);
-    renderTarget();
-    new Setting(this.contentEl).setName(L("显示名称", "Display name")).addText((input) => input.setValue(name).setPlaceholder(L("留空使用文件名或域名", "Use file name or domain")).onChange((value) => { name = value; }));
-    this.contentEl.createDiv({ text: L("图标", "Icon"), cls: "qh-shortcut-icon-label" });
-    const icons = this.contentEl.createDiv({ cls: "qh-shortcut-icons" });
+    let chosen = Boolean(original);
+    const drafts = new Map<ShortcutKind, { target: string; name: string; icon: string }>();
+    const types = this.contentEl.createDiv({ cls: "qh-shortcut-types", attr: { role: "group" } });
+    const typeButtons: HTMLButtonElement[] = [];
+    const targetSlot = this.contentEl.createDiv({ cls: "qh-shortcut-target" });
+    const details = this.contentEl.createDiv({ cls: "qh-shortcut-details" });
+    const detailsToggle = details.createEl("button", { cls: "qh-shortcut-customize", text: L("自定义名称和图标", "Customize name and icon"), attr: { "aria-expanded": String(Boolean(original)) } });
+    const options = details.createDiv();
+    options.hidden = !original;
+    detailsToggle.addEventListener("click", () => { options.hidden = !options.hidden; detailsToggle.setAttr("aria-expanded", String(!options.hidden)); });
+    let nameInput: HTMLInputElement;
+    new Setting(options).setName(L("显示名称", "Display name")).addText((input) => {
+      nameInput = input.inputEl;
+      input.setValue(name).setPlaceholder(L("留空使用文件名或域名", "Use file name or domain")).onChange((value) => { name = value; });
+    });
+    options.createDiv({ text: L("图标", "Icon"), cls: "qh-shortcut-icon-label" });
+    const icons = options.createDiv({ cls: "qh-shortcut-icons" });
     const iconNames = ["文件", "文件夹", "网页", "链接", "阅读", "星标", "喜欢", "工作", "写作", "代码", "学习", "主页", "日历", "音乐", "视频", "灵感"];
     const renderIcons = () => {
       icons.empty();
       SHORTCUT_ICONS.forEach((value, index) => {
         const button = icons.createEl("button", { cls: "qh-icon-choice", attr: { "aria-pressed": String(icon === value) } });
         setIcon(button, value); label(button, isChinese() ? iconNames[index] : value);
-        button.addEventListener("click", () => { icon = value; renderIcons(); });
+        button.addEventListener("click", () => {
+          icon = value;
+          icons.querySelectorAll("button").forEach((entry, at) => entry.setAttr("aria-pressed", String(SHORTCUT_ICONS[at] === icon)));
+        });
       });
     };
-    renderIcons();
+    const renderTarget = () => {
+      targetSlot.empty(); targetSlot.hidden = !chosen;
+      details.hidden = !chosen;
+      if (!chosen) return;
+      const setting = new Setting(targetSlot).setName(kind === "url" ? L("网址", "Website") : L("目标", "Target"));
+      if (kind === "url") setting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
+      else setting.addButton((button) => button.setButtonText(target || (kind === "folder" ? L("选择文件夹", "Choose folder") : L("选择笔记 / 文件", "Choose note / file"))).onClick(() => {
+        const selectedKind = kind;
+        new TargetPicker(this.plugin, kind, (file) => {
+          if (kind !== selectedKind || !this.contentEl.isConnected) return;
+          target = file.path; button.setButtonText(target);
+        }).open();
+      }));
+    };
+    const typeChoices: [ShortcutKind, string, string][] = [["file", "file-text", L("笔记 / 文件", "Note / file")], ["folder", "folder", L("文件夹", "Folder")], ["url", "globe", L("网址", "Website")]];
+    for (const [value, symbol, text] of typeChoices) {
+      const button = types.createEl("button", { cls: "qh-shortcut-type", attr: { "aria-pressed": String(chosen && kind === value) } });
+      setIcon(button.createSpan(), symbol); button.createSpan({ text }); typeButtons.push(button);
+      button.addEventListener("click", () => {
+        if (chosen) drafts.set(kind, { target, name, icon });
+        chosen = true; kind = value;
+        const draft = drafts.get(kind);
+        target = draft?.target ?? ""; name = draft?.name ?? ""; icon = draft?.icon ?? defaultShortcutIcon(kind);
+        nameInput.value = name;
+        typeButtons.forEach((entry, index) => entry.setAttr("aria-pressed", String(typeChoices[index][0] === kind)));
+        renderTarget(); renderIcons();
+        footer.settingEl.hidden = false;
+        error.empty();
+      });
+    }
+    renderTarget(); renderIcons();
     const error = this.contentEl.createDiv({ cls: "qh-shortcut-error", attr: { role: "alert" } });
-    new Setting(this.contentEl).addButton((button) => button.setButtonText(L("保存", "Save")).setCta().onClick(async () => {
+    const footer = new Setting(this.contentEl).addButton((button) => button.setButtonText(this.itemId ? L("保存", "Save") : t("library.add")).setCta().onClick(async () => {
       const page = this.plugin.settings.pages.find((entry) => entry.id === this.pageId);
       let current = this.groupId ? findGroup(this.plugin, this.pageId, this.groupId) : undefined;
       if (!page || (this.groupId && !current) || (this.itemId && !current?.items.some((item) => item.id === this.itemId))) { this.close(); return; }
       const url = kind === "url" ? webTarget(target) : null;
       const file = kind !== "url" ? this.app.vault.getAbstractFileByPath(target) : null;
-      if (!target || (kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
+      if (!chosen || !target || (kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
         error.setText(kind === "url" ? L("请输入完整的 http 或 https 网址。", "Enter a full http or https URL.") : L("目标不存在，请重新选择。", "Target missing. Choose it again.")); return;
       }
       const before = structuredClone(page);
       if (!current) {
-        current = { id: crypto.randomUUID(), name: title.trim().slice(0, 80) || L("常用入口", "Shortcuts"), items: [] };
+        current = { id: crypto.randomUUID(), name: L("常用入口", "Shortcuts"), items: [] };
         page.shortcutGroups.push(current);
         if (page.moduleOrder.length) page.moduleOrder.push(shortcutModuleId(current.id));
       }
@@ -106,6 +133,7 @@ export class ShortcutEditorModal extends Modal {
         error.setText(t("layout.saveFailed")); button.setDisabled(false);
       }
     }));
+    footer.settingEl.hidden = !chosen;
   }
   onClose(): void { this.contentEl.empty(); }
 }
@@ -181,7 +209,7 @@ export function editShortcutGroup(plugin: QiaomuHomePlugin, pageId: string, id: 
   }, groupName(group), L("重命名分组", "Rename group")).open();
 }
 
-export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugin, pageId: string, group: ShortcutGroup, editing: boolean, dragState: (active: boolean) => void): void {
+export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugin, pageId: string, group: ShortcutGroup, editing: boolean, feedback: DragFeedback, dragState: (active: boolean) => void): void {
   const card = parent.createDiv({ cls: "qh-card qh-shortcut-card", attr: { "data-module": shortcutModuleId(group.id) } });
   const head = card.createDiv({ cls: "qh-card-head" });
   setIcon(head.createSpan({ cls: "qh-card-icon" }), "link");
@@ -223,18 +251,30 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
     if (editing) {
       const more = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-more" }); setIcon(more, "ellipsis"); label(more, L("入口选项", "Shortcut options"));
       more.addEventListener("click", (event) => menu(event, more));
-      button.draggable = true;
-      button.addEventListener("dragstart", (event) => { event.stopPropagation(); dragged = item.id; event.dataTransfer?.setData("application/x-qiaomu-shortcut", item.id); dragState(true); });
-      cell.addEventListener("dragover", (event) => { if (dragged && dragged !== item.id) { event.preventDefault(); event.stopPropagation(); grid.querySelectorAll(".is-drag-target").forEach((el) => el.removeClass("is-drag-target")); cell.addClass("is-drag-target"); } });
-      cell.addEventListener("dragleave", () => cell.removeClass("is-drag-target"));
+      const handle = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-grip" });
+      setIcon(handle, "grip-vertical"); label(handle, t("layout.drag"));
+      handle.addEventListener("click", (event) => menu(event, handle));
+      handle.draggable = true;
+      handle.addEventListener("dragstart", (event) => { event.stopPropagation(); dragged = item.id; event.dataTransfer?.setData("application/x-qiaomu-shortcut", item.id); dragState(true); feedback.start(cell, event, shortcutName(item)); });
+      cell.addEventListener("dragover", (event) => { if (dragged && dragged !== item.id) { event.preventDefault(); event.stopPropagation(); feedback.over(cell, event, "x"); } });
+      cell.addEventListener("dragleave", (event) => feedback.leave(cell, event));
       cell.addEventListener("drop", (event) => {
         if (!dragged) return;
         event.preventDefault(); event.stopPropagation();
         const current = findGroup(plugin, pageId, group.id), rect = cell.getBoundingClientRect();
-        const changed = current && reorderShortcut(current, dragged, item.id, event.clientX > rect.left + rect.width / 2);
-        dragged = null; dragState(false); cell.removeClass("is-drag-target"); if (changed) save(plugin);
+        const changed = current && reorderShortcut(current, dragged, item.id, dropAfter("x", rect, event));
+        const movedId = dragged;
+        dragged = null; dragState(false); feedback.clear();
+        if (changed && current) {
+          for (const entry of current.items) {
+            const element = [...grid.children].find((child) => (child as HTMLElement).dataset.shortcut === entry.id);
+            if (element) grid.appendChild(element);
+          }
+          if (movedId) plugin.eachView((view) => view.markMovedShortcut(movedId));
+          save(plugin);
+        }
       });
-      button.addEventListener("dragend", () => { dragged = null; dragState(false); grid.querySelectorAll(".is-drag-target").forEach((el) => el.removeClass("is-drag-target")); });
+      handle.addEventListener("dragend", () => { dragged = null; dragState(false); feedback.clear(); });
     }
   }
   if (!group.items.length) grid.createEl("p", { cls: "qh-card-empty", text: L("点击＋添加笔记、文件夹或网址。", "Add notes, folders or websites with +.") });
