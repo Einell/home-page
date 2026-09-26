@@ -20,6 +20,7 @@ export interface HomeModule {
 
 export function builtinModules(): HomeModule[] {
   return [
+    { id:"beginner-plugins", title:isChinese()?"新手必装":"Starter plugins", source:"Home", icon:"compass", status:"ready", preview:["Calendar", "Advanced Tables", "Omnisearch"], description:isChinese()?"20 个常用插件，按用途了解，再按需安装。":"Discover 20 useful plugins and choose what fits." },
     { id: "todo", title: isChinese() ? "今日代办" : "Today’s tasks", source: "Home", icon: "list-todo", status: "ready", description: isChinese() ? "快速添加和勾选，保存在任务笔记中。" : "Add and complete tasks in a Markdown note." },
     { id: "recent", title: t("section.recent"), source: "Obsidian", icon: "history", status: "ready", description: t("library.recent") },
   ];

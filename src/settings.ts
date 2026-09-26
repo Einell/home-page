@@ -77,7 +77,7 @@ export const BUILTIN_ACTIONS = ["builtin:daily", "builtin:canvas", "builtin:base
 
 export function presetPage(kind: "home" | "reading" | "entertainment"): HomePage {
   const names = {home: ["主页", "Home"], reading: ["阅读", "Reading"], entertainment: ["娱乐", "Entertainment"]};
-  const modules = kind === "home" ? ["todo", "recent"] : kind === "reading" ? ["qiaomu-reader", "qiaomu-ai-rss"] : ["qiaomu-radio"];
+  const modules = kind === "home" ? ["todo", "recent", "beginner-plugins"] : kind === "reading" ? ["qiaomu-reader", "qiaomu-ai-rss"] : ["qiaomu-radio"];
   const page: HomePage = { id: kind, name: names[kind][isChinese() ? 0 : 1], moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
   if (kind === "home") {
     const group = defaultHomeShortcuts(isChinese());
@@ -157,7 +157,7 @@ export function moduleOptions(settings: HomeSettings, id: string, pageId?: strin
   if (Object.hasOwn(page.moduleOptions, id)) return page.moduleOptions[id];
   const parent = moduleSource(id);
   if (parent && Object.hasOwn(page.moduleOptions, parent)) return page.moduleOptions[parent];
-  return { ...DEFAULT_MODULE_OPTIONS, visible: id === "todo" ? false : page.defaultVisible };
+  return { ...DEFAULT_MODULE_OPTIONS, visible: ["todo", "beginner-plugins"].includes(id) ? false : page.defaultVisible };
 }
 
 export function sectionKey(source: string, section: string): string {
