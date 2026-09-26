@@ -125,9 +125,10 @@ export class HomeView extends ItemView {
 
     this.registerEvent((this.app.workspace as Events).on(HOME_CHANGED_EVENT, () => this.refreshSoon()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => { if (leaf === this.leaf) this.refreshSoon(); }));
-    const refreshTodo = () => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
-    this.registerEvent(this.app.vault.on("modify", file => { if (file.path === this.plugin.settings.todoPath) refreshTodo(); }));
-    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (info.file?.path === this.plugin.settings.todoPath) refreshTodo(); }));
+    const refreshTodo = debounce(() => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh"))), 300, true);
+    this.register(() => refreshTodo.cancel());
+    this.registerEvent(this.app.vault.on("modify", file => { if (this.plugin.settings.todoDaily || file.path === this.plugin.settings.todoPath) refreshTodo(); }));
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (this.plugin.settings.todoDaily || info.file?.path === this.plugin.settings.todoPath) refreshTodo(); }));
     this.registerEvent(this.app.vault.on("rename", () => this.refreshSoon()));
     this.registerEvent(this.app.vault.on("delete", () => this.refreshSoon()));
     this.registerDomEvent(root.ownerDocument, "pointerdown", (event) => {
@@ -209,6 +210,7 @@ export class HomeView extends ItemView {
     const minute = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (minute === this.lastMinute) return;
     this.lastMinute = minute;
+    this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
     this.timeEl.setText(minute);
     const date = now.toLocaleDateString([], { month: "long", day: "numeric", weekday: "long" });
     this.subEl.setText(`${greeting(now.getHours())} · ${date}`);

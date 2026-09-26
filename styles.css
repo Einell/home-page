@@ -905,3 +905,5 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-root .qh-todo-input-label input { height: 36px; border: 1px solid var(--qh-border); border-radius: 8px; background: var(--qh-field); color: var(--qh-text); box-shadow: none; }
 .qh-root .qh-todo-input-label input:focus { border-color: var(--qh-focus); }
 .qh-root .qh-todo-form button { height: 36px; background: var(--qh-field); color: var(--qh-text); border: 1px solid var(--qh-border); box-shadow: none; }
+.qh-root .qh-todo-carry { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:13px; color:var(--qh-muted); }
+.qh-root .qh-todo-carry button { background:var(--qh-field); color:var(--qh-text); border:1px solid var(--qh-border); box-shadow:none; font-size:12px; }

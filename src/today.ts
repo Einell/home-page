@@ -7,7 +7,7 @@ const now = moment as unknown as () => { format(pattern: string): string };
 
 interface DailyOptions { folder?: string; format?: string; template?: string }
 
-async function dailyOptions(app: App): Promise<DailyOptions> {
+export async function dailyOptions(app: App): Promise<DailyOptions> {
   const path = `${app.vault.configDir}/daily-notes.json`;
   if (!await app.vault.adapter.exists(path)) return {};
   try {
@@ -28,7 +28,7 @@ export async function todayPath(app: App): Promise<string> {
   return normalizePath(`${folder ? `${folder}/` : ""}${now().format(format)}.md`);
 }
 
-async function ensureParent(app: App, path: string): Promise<void> {
+export async function ensureParent(app: App, path: string): Promise<void> {
   const parts = path.split("/").slice(0, -1);
   for (let i = 1; i <= parts.length; i++) {
     const folder = parts.slice(0, i).join("/");
@@ -36,7 +36,7 @@ async function ensureParent(app: App, path: string): Promise<void> {
   }
 }
 
-async function initialDailyContent(app: App, path: string): Promise<string> {
+export async function initialDailyContent(app: App, path: string): Promise<string> {
   const templatePath = (await dailyOptions(app)).template;
   if (typeof templatePath !== "string" || !templatePath.trim()) return "";
   const template = app.vault.getAbstractFileByPath(normalizePath(templatePath.endsWith(".md") ? templatePath : `${templatePath}.md`));

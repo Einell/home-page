@@ -64,6 +64,8 @@ export interface HomeSettings {
   captureTarget: "daily" | "inbox";
   captureInboxPath: string;
   todoPath: string;
+  todoDaily: boolean;
+  todoAutoCarry: boolean;
   hiddenRecommendations: string[];
 }
 
@@ -93,6 +95,8 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
   todoPath: "Home Todo.md",
+  todoDaily: true,
+  todoAutoCarry: false,
   hiddenRecommendations: [],
 };
 
@@ -213,6 +217,8 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
     todoPath: text(raw.todoPath, defaults.todoPath),
+    todoDaily: raw.todoDaily !== false,
+    todoAutoCarry: raw.todoAutoCarry === true,
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };
 }
