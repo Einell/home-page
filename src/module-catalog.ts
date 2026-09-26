@@ -18,16 +18,10 @@ export interface HomeModule {
   preview?: string[];
 }
 
-export function bookmarksEnabled(app: App): boolean {
-  return (app as App & { internalPlugins?: { getPluginById?(id: string): { enabled?: boolean } | null } })
-    .internalPlugins?.getPluginById?.("bookmarks")?.enabled !== false;
-}
-
-export function builtinModules(app: App): HomeModule[] {
+export function builtinModules(): HomeModule[] {
   return [
-    { id: "todo", title: isChinese() ? "待办" : "Todo", source: "Home", icon: "list-todo", status: "ready", description: isChinese() ? "快速添加和勾选，保存在任务笔记中。" : "Add and complete tasks in a Markdown note." },
+    { id: "todo", title: isChinese() ? "今日代办" : "Today’s tasks", source: "Home", icon: "list-todo", status: "ready", description: isChinese() ? "快速添加和勾选，保存在任务笔记中。" : "Add and complete tasks in a Markdown note." },
     { id: "recent", title: t("section.recent"), source: "Obsidian", icon: "history", status: "ready", description: t("library.recent") },
-    { id: "bookmarks", title: t("section.bookmarks"), source: "Obsidian", icon: "bookmark", status: bookmarksEnabled(app) ? "ready" : "disabled", description: t("library.bookmarks") },
   ];
 }
 

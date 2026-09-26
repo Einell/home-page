@@ -6,7 +6,6 @@ import { shortcutModuleId } from "./shortcuts";
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import { builtinActions, createNamedNote, newNote, type CreateAction } from "./actions";
 import { askAgent, canAsk } from "./agent-bridge";
-import { loadBookmarks } from "./bookmarks";
 import {
   KNOWN_PLUGINS, commandExists, installState, localized, openCommunityPluginSettings, openPluginPage, pluginName, runCommand,
 } from "./ecosystem";
@@ -15,7 +14,7 @@ import type QiaomuHomePlugin from "./main";
 import { currentPage, moduleOptions, moduleSource, type HomeSettings } from "./settings";
 import { addPage, duplicatePage, movePage, removePage, reorderPage } from "./pages";
 import { orderModules, reorderModule, setModule } from "./layout";
-import { pluginModules, bookmarksEnabled, type HomeModule } from "./module-catalog";
+import { pluginModules, type HomeModule } from "./module-catalog";
 import { ModuleLibrary, ModuleOptionsModal, MoveModuleModal } from "./module-library";
 import { NewPageModal, DeletePageModal } from "./page-dialogs";
 import { connectionSnapshot, connectionsChanged, connectionState } from "./connections";
@@ -188,29 +187,30 @@ export class HomeView extends ItemView {
 
   // Header -----------------------------------------------------------------
 
+  refreshHeadline(): void { this.renderHead(); }
+
   private renderHead(): void {
     this.headEl.empty();
     this.timeEl = this.subEl = null;
     this.lastMinute = "";
     const headline = this.plugin.settings.headline;
-    if (headline === "clock") {
+    if (headline === "clock" || !this.plugin.settings.customHeadline.trim()) {
       this.timeEl = this.headEl.createDiv({ cls: "qh-time" });
       this.subEl = this.headEl.createDiv({ cls: "qh-sub" });
       this.tick();
       return;
     }
     const brand = this.headEl.createDiv({ cls: "qh-brand" });
-    setIcon(brand.createSpan({ cls: "qh-brand-mark" }), headline === "brand" ? "trees" : "vault");
-    brand.createSpan({ cls: "qh-brand-name", text: headline === "brand" ? t("brand") : this.app.vault.getName() });
+    brand.createSpan({ cls: "qh-brand-name", text: this.plugin.settings.customHeadline });
   }
 
   private tick(): void {
-    if (!this.timeEl || !this.subEl) return;
     const now = new Date();
     const minute = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (minute === this.lastMinute) return;
     this.lastMinute = minute;
     this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
+    if (!this.timeEl || !this.subEl) return;
     this.timeEl.setText(minute);
     const date = now.toLocaleDateString([], { month: "long", day: "numeric", weekday: "long" });
     this.subEl.setText(`${greeting(now.getHours())} · ${date}`);
@@ -517,7 +517,7 @@ export class HomeView extends ItemView {
 
   private runAction(action: CreateAction): void {
     this.app.workspace.setActiveLeaf(this.leaf, { focus: true });
-    void Promise.resolve(action.run(this.leaf)).catch((error: unknown) => console.error("Qiaomu Home: action failed", error));
+    void Promise.resolve(action.run(this.leaf)).catch((error: unknown) => { console.error("Qiaomu Home: action failed", error); new Notice(error instanceof Error ? error.message : t("error.command")); });
   }
 
   // Continue area ----------------------------------------------------------
@@ -532,6 +532,13 @@ export class HomeView extends ItemView {
       await this.plugin.saveSettings();
       window.setTimeout(() => { if (this.contentEl.isConnected) this.openLibrary(page.id); }, 0);
     }).open();
+  }
+
+  editLayout(pageId: string): void {
+    if (!this.plugin.settings.pages.some(page=>page.id===pageId)) return;
+    this.plugin.settings.activePageId=pageId;this.plugin.settings.tabsEnabled=true;
+    this.editing=true;this.tabsSignature="";this.refreshContent();
+    void this.plugin.saveSettings({rerender:false});
   }
 
   private shortcutDragging = false;
@@ -573,7 +580,7 @@ export class HomeView extends ItemView {
       movePage(settings, id, 1); this.saveLayout();
     }));
     menu.addSeparator();
-    menu.addItem((item) => item.setTitle(t("pages.delete")).setIcon("trash-2").setDisabled(settings.pages.length === 1).onClick(() => {
+    menu.addItem((item) => item.setTitle(t("pages.delete")).setIcon("trash-2").setDisabled(id === settings.homePageId || settings.pages.length === 1).onClick(() => {
       new DeletePageModal(this.app, name, async () => {
         removePage(settings, id);
         await this.plugin.saveSettings();
@@ -709,7 +716,7 @@ export class HomeView extends ItemView {
       if (focus) this.tabsEl.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
       void this.plugin.saveSettings({ rerender: false });
     };
-    const shownPages = settings.tabsEnabled ? settings.pages : [settings.pages[0]];
+    const shownPages = settings.tabsEnabled ? settings.pages : [currentPage(settings)];
     shownPages.forEach((item, index) => {
       const selected = item.id === page.id;
       const button = list.createEl("button", { cls: "qh-page-tab", text: item.name || t("pages.default"),
@@ -766,10 +773,8 @@ export class HomeView extends ItemView {
     next.detach();
     const first = !grid.hasChildNodes();
     if (moduleOptions(this.plugin.settings, "recent", page.id).visible) this.renderRecent(next);
-    const bookmarksReady = moduleOptions(this.plugin.settings, "bookmarks", page.id).visible
-      ? this.renderBookmarks(next, generation) : Promise.resolve();
     if (first) { grid.replaceWith(next); this.gridEl = next; }
-    void Promise.all([pluginModules(this.app, Object.keys(page.moduleOptions).map(moduleSource).filter((id): id is string => Boolean(id))), bookmarksReady]).then(([modules]) => {
+    void pluginModules(this.app, Object.keys(page.moduleOptions).map(moduleSource).filter((id): id is string => Boolean(id))).then((modules) => {
       if (generation !== this.sectionsGeneration) return;
       const expanded = [...modules];
       // Keep explicitly configured sections removable even when their source is disabled or absent.
@@ -817,32 +822,6 @@ export class HomeView extends ItemView {
       }
       if (!first) { grid.replaceWith(next); this.gridEl = next; }
     }).catch((error: unknown) => console.error("Qiaomu Home: could not load modules", error));
-  }
-
-  private async renderBookmarks(bookmarksSlot: HTMLElement, generation: number): Promise<void> {
-    const bookmarks = await loadBookmarks(this.app, moduleOptions(this.plugin.settings, "bookmarks").limit);
-    if (generation !== this.sectionsGeneration) return;
-    if (!bookmarks.length && !this.editing && !currentPage(this.plugin.settings).moduleOptions.bookmarks?.visible) return;
-    const card = bookmarksSlot.createDiv({ cls: "qh-card" });
-    card.dataset.module = "bookmarks";
-    const head = card.createDiv({ cls: "qh-card-head" });
-    setIcon(head.createSpan({ cls: "qh-card-icon" }), "bookmark");
-    head.createSpan({ cls: "qh-card-title", text: t("section.bookmarks") });
-    if (!bookmarks.length) {
-      card.createDiv({ cls: "qh-card-empty", text: t(bookmarksEnabled(this.app) ? "layout.bookmarksEmpty" : "layout.bookmarksDisabled") });
-      return;
-    }
-    const list = card.createDiv({ cls: "qh-bookmarks" });
-    for (const bookmark of bookmarks) {
-      const button = list.createEl("button", { cls: "qh-bookmark" });
-      setIcon(button.createSpan(), bookmark.type === "search" ? "search" : "file-text");
-      button.createSpan({ text: bookmark.title });
-      button.addEventListener("click", () => {
-        if (bookmark.type === "search") this.openGlobalSearch(bookmark.value);
-        else if (bookmark.subpath) void this.app.workspace.openLinkText(`${bookmark.value}${bookmark.subpath}`, "", false);
-        else this.openPath(bookmark.value, false);
-      });
-    }
   }
 
   private renderSection(parent: HTMLElement, sourceId: string, section: HomeSection, moduleId: string): void {
@@ -895,7 +874,7 @@ export class HomeView extends ItemView {
     else hiddenLabel(button, action.label);
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      void Promise.resolve(action.run()).catch((error: unknown) => console.error("Qiaomu Home: action failed", error));
+      void Promise.resolve(action.run()).catch((error: unknown) => { console.error("Qiaomu Home: action failed", error); new Notice(error instanceof Error ? error.message : t("error.command")); });
     });
     button.addEventListener("keydown", (event) => event.stopPropagation());
   }

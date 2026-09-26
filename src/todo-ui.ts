@@ -9,27 +9,31 @@ import { appendTodo, completeTodo, readTodos } from './todo-data';
 const drafts = new WeakMap<QiaomuHomePlugin, Map<string, string>>();
 const L = (zh: string, en: string) => isChinese() ? zh : en;
 class TodoPicker extends SuggestModal<TFile> {
-  constructor(private plugin: QiaomuHomePlugin) { super(plugin.app); this.setPlaceholder(L('选择任务笔记', 'Choose task note')); }
+  constructor(private plugin: QiaomuHomePlugin, private changed:()=>void = ()=>{}, private switchToFixed = true) { super(plugin.app); this.setPlaceholder(L('选择任务笔记', 'Choose task note')); }
   getSuggestions(query: string): TFile[] { return this.app.vault.getMarkdownFiles().filter(f => f.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(0, 50); }
   renderSuggestion(file: TFile, el: HTMLElement): void { el.setText(file.path); }
   onChooseSuggestion(file: TFile): void {
     this.plugin.settings.todoPath = file.path;
-    this.plugin.settings.todoDaily = false;
-    void this.plugin.saveSettings().catch(() => new Notice(L('保存失败，请重试', 'Could not save. Try again.')));
+    if(this.switchToFixed)this.plugin.settings.todoDaily = false;
+    void this.plugin.saveSettings().then(()=>this.changed()).catch(() => new Notice(L('保存失败，请重试', 'Could not save. Try again.')));
   }
+}
+export function renderTodoPreferences(container: HTMLElement, plugin: QiaomuHomePlugin, changed:()=>void = ()=>{}): void {
+  const save=()=>{void plugin.saveSettings().then(changed).catch(()=>new Notice(L('保存失败','Save failed')));};
+  new Setting(container).setName(L('写入位置','Destination')).addDropdown(dropdown=>dropdown.addOptions({daily:L('今日日记','Daily note'),fixed:L('固定笔记','Fixed note')}).setValue(plugin.settings.todoDaily?'daily':'fixed').onChange(value=>{plugin.settings.todoDaily=value==='daily';save();}));
+  if(plugin.settings.todoDaily) {
+    const available=commandExists(plugin.app,'daily-notes');
+    if(!available)container.createDiv({cls:'setting-item-description',text:L('未启用日记，暂存到固定任务笔记。','Daily notes is disabled; using the fixed note.')});
+    new Setting(container).setName(L('自动结转未完成任务','Automatically carry unfinished tasks')).setDesc(L('打开主页时移入今天，原笔记留下日期链接。','Move pending tasks into today when Home opens, leaving dated links.')).addToggle(toggle=>toggle.setValue(plugin.settings.todoAutoCarry).setDisabled(!available).onChange(value=>{plugin.settings.todoAutoCarry=value;save();}));
+  }
+  const fallback=container.createEl('details',{cls:'qh-settings-details'});fallback.open=!plugin.settings.todoDaily;
+  fallback.createEl('summary',{text:plugin.settings.todoDaily?L('备用任务笔记','Fallback task note'):L('任务笔记','Task note')});
+  new Setting(fallback).setName(plugin.settings.todoPath).setDesc(L('未完成项保留在原笔记中；切换不会自动搬移。','Existing tasks stay in their source; switching does not move them.')).addButton(button=>button.setButtonText(L('选择','Choose')).onClick(()=>new TodoPicker(plugin,changed,false).open()));
 }
 class TodoOptions extends Modal {
   constructor(private plugin: QiaomuHomePlugin) { super(plugin.app); }
-  onOpen(): void {
-    this.setTitle(L('待办设置', 'Todo settings'));
-    new Setting(this.contentEl).setName(L('写入今日日记', 'Write to daily note')).setDesc(L('沿用日记目录、日期格式和模板。未启用日记时使用固定笔记。', 'Uses Daily notes folder, format and template; falls back to a fixed note when disabled.'))
-      .addToggle(toggle => toggle.setValue(this.plugin.settings.todoDaily).onChange(value => { this.plugin.settings.todoDaily=value; void this.plugin.saveSettings().catch(()=>new Notice(L("保存失败","Save failed"))); }));
-    new Setting(this.contentEl).setName(L('固定任务笔记', 'Fixed task note')).setDesc(this.plugin.settings.todoPath)
-      .addButton(button => button.setButtonText(L('选择', 'Choose')).onClick(()=>{this.close();new TodoPicker(this.plugin).open();}));
-    new Setting(this.contentEl).setName(L('打开主页时自动结转', 'Carry forward on opening Home')).setDesc(L('将以前未完成的任务移入今天，原日记保留跳转记录。默认关闭。', 'Moves pending tasks into today and leaves links in older notes. Off by default.'))
-      .addToggle(toggle => toggle.setValue(this.plugin.settings.todoAutoCarry).onChange(value => { this.plugin.settings.todoAutoCarry=value; void this.plugin.saveSettings().catch(()=>new Notice(L("保存失败","Save failed"))); }));
-  }
-  onClose(): void { this.contentEl.empty(); }
+  onOpen(): void {this.setTitle(L('待办设置','Todo settings'));this.contentEl.empty();renderTodoPreferences(this.contentEl,this.plugin,()=>this.onOpen());}
+  onClose(): void {this.contentEl.empty();}
 }
 class CarryPicker extends Modal {
   constructor(app: QiaomuHomePlugin['app'], private groups: CarryGroup[], private run: (groups:CarryGroup[])=>Promise<void>) {super(app);}
@@ -57,9 +61,7 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   const card = parent.createDiv({ cls: 'qh-card qh-todo' }); card.dataset.module = 'todo';
   const head = card.createDiv({ cls: 'qh-card-head' });
   setIcon(head.createSpan({ cls: 'qh-card-icon' }), 'list-todo');
-  head.createSpan({ cls: 'qh-card-title', text: L('待办', 'Todo') });
-  const destination = card.createEl('button', { cls: 'qh-todo-source', text: path });
-  destination.addEventListener('click', () => { const file=app.vault.getAbstractFileByPath(path); if(file instanceof TFile)void app.workspace.getLeaf('tab').openFile(file); });
+  head.createSpan({ cls: 'qh-card-title', text: L('今日代办', 'Today’s tasks') });
   const options=head.createEl('button',{cls:'qh-icon-button'});setIcon(options,'sliders-horizontal');options.createSpan({cls:'qh-sr-only',text:L('待办设置','Todo settings')});options.addEventListener('click',()=>new TodoOptions(plugin).open());
   const form = card.createEl('form', { cls: 'qh-todo-form' });
   const label = form.createEl('label', { cls: 'qh-sr-only', text: L('添加待办', 'Add task') });
@@ -90,8 +92,6 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   const refresh = async () => {
     const turn = ++generation;
     path = await todoTarget(plugin);
-    const daily=plugin.settings.todoDaily && commandExists(app,'daily-notes');
-    destination.setText(L('写入：','Write to: ')+(daily?L('今日日记','Today’s note'):path));
     const file = app.vault.getAbstractFileByPath(path);
     const snapshot = file instanceof TFile ? editorFor(app, file)?.getValue() ?? await app.vault.cachedRead(file) : '';
     if (turn !== generation) return;

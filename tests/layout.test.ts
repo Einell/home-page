@@ -15,7 +15,7 @@ describe("module library layout", () => {
   });
 
   it("reorders in both directions, preserving hidden modules and later discoveries", () => {
-    const settings = normalizeSettings(null), page = settings.pages[0];
+    const settings = normalizeSettings({ tabsEnabled: false }), page = settings.pages[0];
     page.moduleOrder = ["a", "hidden", "b", "c"];
     expect(reorderModule(page, "a", "c", ["a", "b", "c"], true)).toBe(true);
     expect(orderModules(page, ["a", "b", "c", "new"])).toEqual(["b", "c", "a", "new"]);
@@ -26,7 +26,7 @@ describe("module library layout", () => {
   });
 
   it("moves a section with its count to a captured destination without editing the active page", () => {
-    const settings = normalizeSettings(null), first = settings.pages[0];
+    const settings = normalizeSettings({ tabsEnabled: false }), first = settings.pages[0];
     const second = addPage(settings, "second"), third = addPage(settings, "third");
     const key = sectionKey("reader", "books");
     setModule(settings, first.id, key, { limit: 4 });
@@ -42,14 +42,14 @@ describe("module library layout", () => {
   });
 
   it("copies settings deeply and keeps selected identity when dropping a page after another", () => {
-    const settings = normalizeSettings(null), source = settings.pages[0];
+    const settings = normalizeSettings({ tabsEnabled: false }), source = settings.pages[0];
     source.moduleOptions.recent = { visible: true, limit: 2 };
-    source.moduleOrder = ["recent", "bookmarks"];
+    source.moduleOrder = ["recent", "example-module"];
     const copy = duplicatePage(settings, source.id, "copy")!;
     setModule(settings, copy.id, "recent", { limit: 6 });
     copy.moduleOrder.reverse();
     expect(source.moduleOptions.recent.limit).toBe(2);
-    expect(source.moduleOrder).toEqual(["recent", "bookmarks"]);
+    expect(source.moduleOrder).toEqual(["recent", "example-module"]);
     reorderPage(settings, source.id, copy.id, true);
     expect(settings.pages.map((page) => page.id)).toEqual([copy.id, source.id]);
     expect(settings.activePageId).toBe(copy.id);

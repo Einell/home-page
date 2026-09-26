@@ -4,7 +4,6 @@ import { Modal, Notice, Setting, setIcon } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { isChinese, t } from "./i18n";
 import { builtinModules, pluginModules, type HomeModule } from "./module-catalog";
-import { loadBookmarks } from "./bookmarks";
 import { connectionSnapshot, connectionsChanged } from "./connections";
 import { moduleOptions, moduleSource } from "./settings";
 import { moveModule, setModule } from "./layout";
@@ -41,7 +40,7 @@ export class ModuleLibrary extends Modal {
 
   private baseModules(): HomeModule[] {
     const page = this.plugin.settings.pages.find((item) => item.id === this.pageId);
-    return [...builtinModules(this.app), { id: "new-shortcuts", title: isChinese() ? "快捷方式" : "Shortcuts", source: "Home", icon: "link", description: isChinese() ? "自定义笔记、文件夹和网址入口。" : "Your notes, folders and websites.", status: "ready" },
+    return [...builtinModules(), { id: "new-shortcuts", title: isChinese() ? "快捷方式" : "Shortcuts", source: "Home", icon: "link", description: isChinese() ? "自定义笔记、文件夹和网址入口。" : "Your notes, folders and websites.", status: "ready" },
       ...(page?.shortcutGroups ?? []).map((group): HomeModule => ({ id: shortcutModuleId(group.id), title: group.name, source: "Home", icon: "link", description: isChinese() ? "已添加的快捷方式" : "Saved shortcuts", status: "ready", preview: group.items.map((item) => item.name || item.target) }))];
   }
 
@@ -49,9 +48,9 @@ export class ModuleLibrary extends Modal {
     const generation = ++this.generation;
     this.modules = this.baseModules();
     this.renderList();
-    const [sources, bookmarks] = await Promise.all([pluginModules(this.app, this.plugin.settings.pages.flatMap((page) => Object.keys(page.moduleOptions).map(moduleSource).filter((id): id is string => Boolean(id)))), loadBookmarks(this.app, 3)]);
+    const sources = await pluginModules(this.app, this.plugin.settings.pages.flatMap((page) => Object.keys(page.moduleOptions).map(moduleSource).filter((id): id is string => Boolean(id))));
     if (generation !== this.generation) return;
-    this.modules = [...this.baseModules().map((item) => item.id === "bookmarks" ? { ...item, preview: bookmarks.map((bookmark) => bookmark.title) } : item), ...sources];
+    this.modules = [...this.baseModules(), ...sources];
     this.renderList();
   }
 
@@ -82,8 +81,7 @@ export class ModuleLibrary extends Modal {
         }
       }
       card.createDiv({ cls: "qh-library-description", text: item.description });
-      const added = item.id !== "new-shortcuts" && moduleOptions(this.plugin.settings, item.id, this.pageId).visible
-        && (item.id !== "bookmarks" || Boolean(item.preview?.length) || Object.hasOwn(page.moduleOptions, item.id));
+      const added = item.id !== "new-shortcuts" && moduleOptions(this.plugin.settings, item.id, this.pageId).visible;
       const ready = item.status === "ready";
       const label = ready ? (added ? t("library.added") : t("library.add"))
         : item.status === "absent" ? t("library.install") : item.status === "disabled" ? t("library.enable") : t("legacy.retry");
@@ -95,9 +93,7 @@ export class ModuleLibrary extends Modal {
         if (!ready) {
           if (item.status === "absent" && item.sourceId) openPluginPage(item.sourceId);
           else if (item.status === "disabled") {
-            const settings = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): unknown } }).setting;
-            if (item.id === "bookmarks") { settings?.open?.(); settings?.openTabById?.("core-plugins"); }
-            else openCommunityPluginSettings(this.app);
+            openCommunityPluginSettings(this.app);
           } else void this.load();
           return;
         }

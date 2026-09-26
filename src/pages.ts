@@ -1,4 +1,4 @@
-import { type HomePage, type HomeSettings } from "./settings";
+import { presetPage, type HomePage, type HomeSettings } from "./settings";
 
 export function addPage(settings: HomeSettings, name: string): HomePage {
   const page: HomePage = { id: crypto.randomUUID(), name: name.trim().slice(0, 80),
@@ -11,7 +11,7 @@ export function addPage(settings: HomeSettings, name: string): HomePage {
 
 export function removePage(settings: HomeSettings, id: string): boolean {
   const index = settings.pages.findIndex((page) => page.id === id);
-  if (index < 0 || settings.pages.length === 1) return false;
+  if (index < 0 || id === settings.homePageId || settings.pages.length === 1) return false;
   settings.pages.splice(index, 1);
   if (settings.activePageId === id) settings.activePageId = settings.pages[Math.max(0, index - 1)].id;
   return true;
@@ -43,4 +43,11 @@ export function reorderPage(settings: HomeSettings, id: string, before: string, 
   settings.pages = settings.pages.filter((item) => item.id !== id);
   settings.pages.splice(settings.pages.findIndex((item) => item.id === before) + (after ? 1 : 0), 0, page);
   return true;
+}
+
+export function addPresetPage(settings: HomeSettings, kind: "reading" | "entertainment"): HomePage {
+  const page=presetPage(kind);
+  page.id=crypto.randomUUID();
+  if(page.shortcutGroups.length){const group=page.shortcutGroups[0],old=`shortcut:${group.id}`;group.id=crypto.randomUUID();page.moduleOptions[`shortcut:${group.id}`]=page.moduleOptions[old];delete page.moduleOptions[old];page.moduleOrder=page.moduleOrder.map(id=>id===old?`shortcut:${group.id}`:id);}
+  settings.pages.push(page);settings.tabsEnabled=true;settings.activePageId=page.id;return page;
 }

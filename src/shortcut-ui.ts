@@ -1,3 +1,4 @@
+import { openTodayNote } from "./today";
 import { DragFeedback, dropAfter } from "./drag-feedback";
 import { FuzzySuggestModal, Menu, Modal, Notice, Setting, TFile, TFolder, setIcon, type TAbstractFile } from "obsidian";
 import type QiaomuHomePlugin from "./main";
@@ -67,7 +68,8 @@ export class ShortcutEditorModal extends Modal {
       details.hidden = !chosen;
       if (!chosen) return;
       const setting = new Setting(targetSlot).setName(kind === "url" ? L("网址", "Website") : L("目标", "Target"));
-      if (kind === "url") setting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
+      if (kind === "daily") { target = "today"; setting.setName(L("今日日记", "Daily note")).setDesc(L("始终打开当天日记，不存在时自动创建。", "Opens today’s note and creates it if missing.")); }
+      else if (kind === "url") setting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
       else setting.addButton((button) => button.setButtonText(target || (kind === "folder" ? L("选择文件夹", "Choose folder") : L("选择笔记 / 文件", "Choose note / file"))).onClick(() => {
         const selectedKind = kind;
         new TargetPicker(this.plugin, kind, (file) => {
@@ -76,7 +78,7 @@ export class ShortcutEditorModal extends Modal {
         }).open();
       }));
     };
-    const typeChoices: [ShortcutKind, string, string][] = [["file", "file-text", L("笔记 / 文件", "Note / file")], ["folder", "folder", L("文件夹", "Folder")], ["url", "globe", L("网址", "Website")]];
+    const typeChoices: [ShortcutKind, string, string][] = [["file", "file-text", L("笔记 / 文件", "Note / file")], ["folder", "folder", L("文件夹", "Folder")], ["url", "globe", L("网址", "Website")], ["daily", "calendar", L("今日日记", "Daily note")]];
     for (const [value, symbol, text] of typeChoices) {
       const button = types.createEl("button", { cls: "qh-shortcut-type", attr: { "aria-pressed": String(chosen && kind === value) } });
       setIcon(button.createSpan(), symbol); button.createSpan({ text }); typeButtons.push(button);
@@ -100,7 +102,7 @@ export class ShortcutEditorModal extends Modal {
       if (!page || (this.groupId && !current) || (this.itemId && !current?.items.some((item) => item.id === this.itemId))) { this.close(); return; }
       const url = kind === "url" ? webTarget(target) : null;
       const file = kind !== "url" ? this.app.vault.getAbstractFileByPath(target) : null;
-      if (!chosen || !target || (kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
+      if (!chosen || !target || (kind === "daily" ? false : kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
         error.setText(kind === "url" ? L("请输入完整的 http 或 https 网址。", "Enter a full http or https URL.") : L("目标不存在，请重新选择。", "Target missing. Choose it again.")); return;
       }
       const before = structuredClone(page);
@@ -139,9 +141,10 @@ export class ShortcutEditorModal extends Modal {
 }
 
 export function shortcutName(item: Shortcut): string {
-  return item.name || (item.kind === "url" ? new URL(item.target).hostname : item.target.split("/").pop()?.replace(/\.md$/, "") || "/");
+  return item.name || (item.kind === "daily" ? L("今日日记", "Daily note") : item.kind === "url" ? new URL(item.target).hostname : item.target.split("/").pop()?.replace(/\.md$/, "") || "/");
 }
 async function openShortcut(plugin: QiaomuHomePlugin, item: Shortcut, newTab: boolean): Promise<void> {
+  if (item.kind === "daily") { await openTodayNote(plugin.app, plugin.app.workspace.getLeaf(newTab ? "tab" : false)); return; }
   if (item.kind === "url") { const url = webTarget(item.target); if (url) window.open(url, "_blank", "noopener,noreferrer"); return; }
   const file = plugin.app.vault.getAbstractFileByPath(item.target);
   if (item.kind === "file" && file instanceof TFile) { await plugin.app.workspace.getLeaf(newTab ? "tab" : false).openFile(file); return; }
@@ -223,7 +226,7 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
     const button = cell.createEl("button", { cls: "qh-shortcut-link" });
     setIcon(button.createSpan({ cls: "qh-shortcut-icon" }), item.icon);
     button.createSpan({ cls: "qh-shortcut-name", text: shortcutName(item) });
-    if (item.kind !== "url" && !plugin.app.vault.getAbstractFileByPath(item.target)) {
+    if (item.kind !== "url" && item.kind !== "daily" && !plugin.app.vault.getAbstractFileByPath(item.target)) {
       cell.addClass("is-missing"); button.createSpan({ cls: "qh-shortcut-status", text: L("目标已移除", "Target missing") });
     }
     const open = (newTab: boolean) => { void openShortcut(plugin, item, newTab).catch(() => new Notice(L("无法打开目标，请检查文件列表是否启用或重新选择目标。", "Unable to open. Enable the file explorer or choose the target again."))); };

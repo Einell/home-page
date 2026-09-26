@@ -1,7 +1,8 @@
-import { normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
+import { isChinese } from "./i18n";
+import { defaultHomeShortcuts, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
 export type WallpaperRotation = "daily" | "open" | "fixed";
-export type Headline = "clock" | "brand" | "vault";
+export type Headline = "clock" | "custom";
 
 /** A photo Home is showing or has cached. `url` is the image; `page` credits the photographer. */
 export interface Photo {
@@ -39,6 +40,7 @@ export interface HomeSettings {
   openOnStartup: boolean;
   replaceNewTab: boolean;
   headline: Headline;
+  customHeadline: string;
   wallpaper: {
     source: WallpaperSource;
     rotation: WallpaperRotation;
@@ -58,6 +60,8 @@ export interface HomeSettings {
   commands: CustomCommand[];
   tabsEnabled: boolean;
   activePageId: string;
+  homePageId: string;
+  homeShortcutsSeeded: boolean;
   pages: HomePage[];
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
@@ -71,10 +75,29 @@ export interface HomeSettings {
 
 export const BUILTIN_ACTIONS = ["builtin:daily", "builtin:canvas", "builtin:base", "builtin:folder", "builtin:import"] as const;
 
+export function presetPage(kind: "home" | "reading" | "entertainment"): HomePage {
+  const names = {home: ["主页", "Home"], reading: ["阅读", "Reading"], entertainment: ["娱乐", "Entertainment"]};
+  const modules = kind === "home" ? ["todo", "recent"] : kind === "reading" ? ["qiaomu-reader", "qiaomu-ai-rss"] : ["qiaomu-radio"];
+  const page: HomePage = { id: kind, name: names[kind][isChinese() ? 0 : 1], moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
+  if (kind === "home") {
+    const group = defaultHomeShortcuts(isChinese());
+    page.shortcutGroups.push(group);
+    page.moduleOptions[`shortcut:${group.id}`] = {visible:true,limit:3};
+    page.moduleOrder.push(`shortcut:${group.id}`);
+  }
+  if(kind === "entertainment") {
+    const id="entertainment-links";
+    page.shortcutGroups.push({id,name:isChinese()?"常用网站":"Favorite websites",items:[]});
+    page.moduleOptions[`shortcut:${id}`]={visible:true,limit:3};page.moduleOrder.push(`shortcut:${id}`);
+  }
+  return page;
+}
+
 export const DEFAULT_SETTINGS: HomeSettings = {
   openOnStartup: true,
   replaceNewTab: true,
   headline: "clock",
+  customHeadline: "",
   wallpaper: {
     source: "curated",
     rotation: "daily",
@@ -88,9 +111,11 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   actions: [...BUILTIN_ACTIONS],
   hiddenActions: [],
   commands: [],
-  tabsEnabled: false,
+  tabsEnabled: true,
   activePageId: "home",
-  pages: [{ id: "home", name: "", moduleOptions: {}, moduleOrder: [], shortcutGroups: [], defaultVisible: true, showRecommendations: true }],
+  homePageId: "home",
+  homeShortcutsSeeded: true,
+  pages: [presetPage("home"), presetPage("reading"), presetPage("entertainment")],
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
@@ -123,7 +148,7 @@ function photo(value: unknown): Photo | null {
 }
 
 export function currentPage(settings: HomeSettings, pageId?: string): HomePage {
-  const id = pageId ?? (settings.tabsEnabled ? settings.activePageId : settings.pages[0].id);
+  const id = pageId ?? (settings.tabsEnabled ? settings.activePageId : settings.homePageId);
   return settings.pages.find((page) => page.id === id) ?? settings.pages[0];
 }
 
@@ -153,7 +178,7 @@ function normalizePages(raw: Record<string, unknown>, modules: Record<string, Mo
     if (typeof page.id !== "string" || !page.id || pages.some((saved) => saved.id === page.id)) continue;
     pages.push({ id: page.id, name: text(page.name).trim().slice(0, 80),
       shortcutGroups: normalizeShortcutGroups(page.shortcutGroups),
-      moduleOptions: normalizeModules(page.moduleOptions), moduleOrder: [...new Set(strings(page.moduleOrder))], defaultVisible: page.defaultVisible !== false,
+      moduleOptions: normalizeModules(page.moduleOptions), moduleOrder: [...new Set(strings(page.moduleOrder).filter(id => id !== "bookmarks"))], defaultVisible: page.defaultVisible !== false,
       showRecommendations: page.showRecommendations === true });
   }
   return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, moduleOrder: [], shortcutGroups: [], defaultVisible: true,
@@ -164,7 +189,7 @@ function normalizeModules(value: unknown): Record<string, ModuleOptions> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const result: Record<string, ModuleOptions> = {};
   for (const [id, raw] of Object.entries(value)) {
-    if (!id || id === "__proto__" || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    if (!id || id === "bookmarks" || id === "__proto__" || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const candidate = raw as Partial<ModuleOptions>;
     result[id] = {
       visible: typeof candidate.visible === "boolean" ? candidate.visible : true,
@@ -192,11 +217,30 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     : [];
   const modules = normalizeModules(raw.moduleOptions);
   if (!modules.recent && raw.showRecent === false) modules.recent = { visible: false, limit: 3 };
-  const pages = normalizePages(raw, modules);
+  const fresh = Object.keys(raw).length === 0;
+  const pages = fresh ? structuredClone(defaults.pages) : normalizePages(raw, modules);
+  const homePageId = pages.some(page => page.id === raw.homePageId) ? raw.homePageId as string : (pages.find(page => page.id === "home")?.id ?? pages[0].id);
+  if (!fresh && raw.homeShortcutsSeeded !== true) {
+    const home = pages.find(page => page.id === homePageId)!;
+    const defaults = defaultHomeShortcuts(isChinese());
+    const existing = home.shortcutGroups.find(group => group.id === defaults.id || ["常用入口", "Shortcuts"].includes(group.name));
+    if (existing) {
+      for (const item of defaults.items) if (!existing.items.some(entry => entry.kind === item.kind && entry.target === item.target)) {
+        let id = item.id;
+        while (existing.items.some(entry => entry.id === id)) id += "-default";
+        existing.items.push({...item,id});
+      }
+    } else {
+      home.shortcutGroups.push(defaults);
+      home.moduleOptions[`shortcut:${defaults.id}`] = {visible:true,limit:3};
+      if (home.moduleOrder.length) home.moduleOrder.push(`shortcut:${defaults.id}`);
+    }
+  }
   return {
     openOnStartup: typeof raw.openOnStartup === "boolean" ? raw.openOnStartup : defaults.openOnStartup,
     replaceNewTab: typeof raw.replaceNewTab === "boolean" ? raw.replaceNewTab : defaults.replaceNewTab,
-    headline: pick(raw.headline, ["clock", "brand", "vault"], defaults.headline),
+    headline: pick(raw.headline, ["clock", "custom"], defaults.headline),
+    customHeadline: text(raw.customHeadline).slice(0, 120),
     wallpaper: {
       source: pick(wall.source, ["curated", "unsplash", "local", "none"], defaults.wallpaper.source),
       rotation: pick(wall.rotation, ["daily", "open", "fixed"], defaults.wallpaper.rotation),
@@ -210,7 +254,9 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     actions: [...new Set(actions)],
     hiddenActions: strings(raw.hiddenActions),
     commands,
-    tabsEnabled: raw.tabsEnabled === true,
+    tabsEnabled: fresh ? true : raw.tabsEnabled === true,
+    homePageId,
+    homeShortcutsSeeded: true,
     activePageId: pages.some((page) => page.id === raw.activePageId) ? raw.activePageId as string : pages[0].id,
     pages,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,

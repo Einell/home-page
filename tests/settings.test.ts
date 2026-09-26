@@ -26,7 +26,8 @@ describe("normalizeSettings", () => {
   it("defaults every card to three items and preserves earlier Recent visibility", () => {
     const defaults = normalizeSettings(null);
     expect(moduleOptions(defaults, "recent")).toEqual({ visible: true, limit: 3 });
-    expect(moduleOptions(defaults, "qiaomu-reader")).toEqual({ visible: true, limit: 3 });
+    expect(moduleOptions(defaults, "qiaomu-reader")).toEqual({ visible: false, limit: 3 });
+    expect(moduleOptions(defaults, "qiaomu-reader", "reading")).toEqual({ visible: true, limit: 3 });
     const migrated = normalizeSettings({ showRecent: false, moduleOptions: { "qiaomu-reader": { visible: false, limit: 9 } } });
     expect(moduleOptions(migrated, "recent")).toEqual({ visible: false, limit: 3 });
     expect(moduleOptions(migrated, "qiaomu-reader")).toEqual({ visible: false, limit: 6 });

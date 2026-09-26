@@ -14,7 +14,7 @@ describe("custom shortcuts", () => {
     for (const value of ["javascript:alert(1)", "file:///private/data", "data:text/html,test", "obsidian://open", "https://name:secret@example.com", "example.com"]) expect(webTarget(value)).toBeNull();
   });
   it("migrates older pages and rejects damaged entries without losing healthy ones", () => {
-    expect(normalizeSettings(null).pages[0].shortcutGroups).toEqual([]);
+    expect(normalizeSettings(null).pages[0].shortcutGroups[0].items.map(item => item.kind)).toEqual(["daily","url","url"]);
     const group = fixture();
     const normalized = normalizeShortcutGroups([null, group, group, { id: "bad", items: [null, { id: "unsafe", kind: "url", target: "javascript:alert(1)" }] }]);
     expect(normalized).toEqual([group, { id: "bad", name: "", items: [] }]);
@@ -22,7 +22,7 @@ describe("custom shortcuts", () => {
     expect(normalizeSettings(JSON.parse(JSON.stringify(settings)))).toEqual(settings);
   });
   it("updates renamed folders and descendants in copied pages without changing custom names or websites", () => {
-    const settings = normalizeSettings(null);
+    const settings = normalizeSettings({homeShortcutsSeeded:true});
     settings.pages[0].shortcutGroups.push(fixture());
     const copy = duplicatePage(settings, "home", "Copy")!;
     copy.shortcutGroups[0].items[0].name = "Keep my label";
@@ -42,7 +42,7 @@ describe("custom shortcuts", () => {
     expect(reorderShortcut(group, "note", "removed")).toBe(false);
   });
   it("moves a whole group and its page order without changing source files", () => {
-    const settings = normalizeSettings(null), source = settings.pages[0];
+    const settings = normalizeSettings({homeShortcutsSeeded:true}), source = settings.pages[0];
     source.shortcutGroups.push(fixture()); source.moduleOrder = ["recent", "shortcut:group"];
     const target = addPage(settings, "Reading");
     expect(moveShortcutGroup(settings, source.id, "missing", "group")).toBe(false);
@@ -52,4 +52,17 @@ describe("custom shortcuts", () => {
     expect(target.shortcutGroups).toEqual([fixture()]);
     expect(target.moduleOptions["shortcut:group"].visible).toBe(true);
   });
+});
+
+it("seeds shortcuts once, preserving edits, deletions and user bookmarks", () => {
+  const settings = normalizeSettings({pages:[{id:"home",moduleOptions:{bookmarks:{visible:true,limit:3}},moduleOrder:["bookmarks","recent"],shortcutGroups:[{id:"mine",name:"常用入口",items:[{id:"x",kind:"file",target:"Notes/My.md",name:"My note",icon:"file-text"}]}]}]});
+  const page = settings.pages[0];
+  expect(page.moduleOrder).toEqual(["recent"]);
+  expect(page.moduleOptions.bookmarks).toBeUndefined();
+  expect(page.shortcutGroups[0].items).toHaveLength(4);
+  expect(new Set(page.shortcutGroups[0].items.map(i=>i.id)).size).toBe(4);
+  page.shortcutGroups[0].items = page.shortcutGroups[0].items.filter(i=>i.kind==="file");
+  expect(normalizeSettings(settings).pages[0].shortcutGroups[0].items).toEqual(page.shortcutGroups[0].items);
+  page.shortcutGroups=[];
+  expect(normalizeSettings(settings).pages[0].shortcutGroups).toEqual([]);
 });
