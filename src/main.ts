@@ -21,7 +21,11 @@ export default class QiaomuHomePlugin extends Plugin {
     this.settings = normalizeSettings(await this.loadData());
     this.wallpaper = new WallpaperService(this);
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
-      if (renameShortcutTargets(this.settings, oldPath, file.path)) void this.saveSettings().catch(() => new Notice(t("layout.saveFailed")));
+      let todoRenamed = false;
+      if (this.settings.todoPath === oldPath || this.settings.todoPath.startsWith(`${oldPath}/`)) {
+        this.settings.todoPath = file.path + this.settings.todoPath.slice(oldPath.length); todoRenamed = true;
+      }
+      if (renameShortcutTargets(this.settings, oldPath, file.path) || todoRenamed) void this.saveSettings().catch(() => new Notice(t("layout.saveFailed")));
     }));
     this.registerView(HOME_VIEW_TYPE, (leaf) => new HomeView(leaf, this));
 

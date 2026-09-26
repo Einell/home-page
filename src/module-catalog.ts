@@ -25,6 +25,7 @@ export function bookmarksEnabled(app: App): boolean {
 
 export function builtinModules(app: App): HomeModule[] {
   return [
+    { id: "todo", title: isChinese() ? "待办" : "Todo", source: "Home", icon: "list-todo", status: "ready", description: isChinese() ? "快速添加和勾选，保存在任务笔记中。" : "Add and complete tasks in a Markdown note." },
     { id: "recent", title: t("section.recent"), source: "Obsidian", icon: "history", status: "ready", description: t("library.recent") },
     { id: "bookmarks", title: t("section.bookmarks"), source: "Obsidian", icon: "bookmark", status: bookmarksEnabled(app) ? "ready" : "disabled", description: t("library.bookmarks") },
   ];

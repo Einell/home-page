@@ -63,6 +63,7 @@ export interface HomeSettings {
   showDaily: boolean;
   captureTarget: "daily" | "inbox";
   captureInboxPath: string;
+  todoPath: string;
   hiddenRecommendations: string[];
 }
 
@@ -91,6 +92,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
+  todoPath: "Home Todo.md",
   hiddenRecommendations: [],
 };
 
@@ -126,7 +128,7 @@ export function moduleOptions(settings: HomeSettings, id: string, pageId?: strin
   if (Object.hasOwn(page.moduleOptions, id)) return page.moduleOptions[id];
   const parent = moduleSource(id);
   if (parent && Object.hasOwn(page.moduleOptions, parent)) return page.moduleOptions[parent];
-  return { ...DEFAULT_MODULE_OPTIONS, visible: page.defaultVisible };
+  return { ...DEFAULT_MODULE_OPTIONS, visible: id === "todo" ? false : page.defaultVisible };
 }
 
 export function sectionKey(source: string, section: string): string {
@@ -210,6 +212,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
+    todoPath: text(raw.todoPath, defaults.todoPath),
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };
 }

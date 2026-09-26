@@ -1,3 +1,5 @@
+import { renderTodo } from "./todo-ui";
+import { isChinese } from "./i18n";
 import { DragFeedback, dropAfter } from "./drag-feedback";
 import { editShortcutGroup, MoveShortcutModal, renderShortcutGroup } from "./shortcut-ui";
 import { shortcutModuleId } from "./shortcuts";
@@ -123,6 +125,9 @@ export class HomeView extends ItemView {
 
     this.registerEvent((this.app.workspace as Events).on(HOME_CHANGED_EVENT, () => this.refreshSoon()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => { if (leaf === this.leaf) this.refreshSoon(); }));
+    const refreshTodo = () => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
+    this.registerEvent(this.app.vault.on("modify", file => { if (file.path === this.plugin.settings.todoPath) refreshTodo(); }));
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (info.file?.path === this.plugin.settings.todoPath) refreshTodo(); }));
     this.registerEvent(this.app.vault.on("rename", () => this.refreshSoon()));
     this.registerEvent(this.app.vault.on("delete", () => this.refreshSoon()));
     this.registerDomEvent(root.ownerDocument, "pointerdown", (event) => {
@@ -730,11 +735,15 @@ export class HomeView extends ItemView {
     setIcon(options, "ellipsis"); hiddenLabel(options, t("pages.menu"));
     options.addEventListener("click", (event) => this.pageMenu(event, page.id));
     const tools = this.tabsEl.createDiv({ cls: "qh-layout-tools" });
-    const library = tools.createEl("button", { cls: "qh-icon-button qh-layout-button" });
-    setIcon(library, "layout-grid"); hiddenLabel(library, t("library.title"));
-    library.addEventListener("click", () => this.openLibrary());
-    const edit = tools.createEl("button", { cls: "qh-icon-button qh-layout-button" });
-    setIcon(edit, this.editing ? "check" : "pencil"); hiddenLabel(edit, t(this.editing ? "layout.done" : "layout.edit"));
+    if (this.editing) {
+      const library = tools.createEl("button", { cls: "qh-layout-action" });
+      setIcon(library.createSpan(), "plus"); library.createSpan({ text: t("library.title") });
+      library.addEventListener("click", () => this.openLibrary());
+    }
+    const edit = tools.createEl("button", { cls: this.editing ? "qh-layout-action" : "qh-icon-button qh-layout-button" });
+    setIcon(edit.createSpan(), this.editing ? "check" : "settings");
+    if (this.editing) edit.createSpan({ text: t("layout.done") });
+    else hiddenLabel(edit, isChinese() ? "布置主页" : "Customize Home");
     edit.setAttr("aria-pressed", String(this.editing));
     edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.shortcutDragging = false; this.dragFeedback.clear(); this.refreshContent(); });
   }
@@ -778,6 +787,7 @@ export class HomeView extends ItemView {
         }, item.id);
         else this.renderUnavailable(next, item);
       }
+      if (moduleOptions(this.plugin.settings, "todo", page.id).visible) renderTodo(next, this.plugin, moduleOptions(this.plugin.settings, "todo", page.id).limit);
       this.renderRecommendations(next);
       for (const group of page.shortcutGroups) {
         if (moduleOptions(this.plugin.settings, shortcutModuleId(group.id), page.id).visible) renderShortcutGroup(next, this.plugin, page.id, group, this.editing, this.dragFeedback, (active) => { this.shortcutDragging = active; });

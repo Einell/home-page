@@ -97,3 +97,7 @@ Install from the [Obsidian community directory](https://community.obsidian.md/pl
 To build from source, run `npm install && npm run check` and copy the same three files. Desktop has been checked in a local vault; mobile has not been verified on a physical device.
 
 Search stays local. Wallpaper images load from Unsplash; optional Unsplash search uses a key stored in Obsidian SecretStorage. Asking Agent sends text only when you press its shortcut. See [privacy details](#隐私) and [license](LICENSE) (GPL-3.0-only; the standalone protocol files are MIT licensed).
+
+### 开发版待办
+
+布置主页：点击页签右侧齿轮 → **＋ 添加内容** → **待办**。回车添加，勾选完成；默认显示 3 条，可在卡片菜单调整。首次添加保存到 `Home Todo.md`，点击来源名称可选择已有 Markdown 笔记。所有页签共用这份任务笔记，未完成任务跨天保留。暂不接 Tasks，也不自动切换到今日日记。

@@ -890,3 +890,18 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 @keyframes qh-moved { from { outline: 2px solid var(--interactive-accent); outline-offset: 2px; } to { outline: 2px solid transparent; outline-offset: 2px; } }
 @media (prefers-reduced-motion: reduce) { .qh-just-moved { animation: none; } }
 @container (max-width: 560px) { .qh-layout-tools { width: auto; margin-top: 0; } .qh-layout-tools .qh-layout-button { flex: none; } }
+
+.qh-root .qh-layout-action { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; background: var(--qh-surface); color: inherit; border: 1px solid var(--qh-border); box-shadow: none; }
+.qh-root .qh-layout-action svg { width: 17px; height: 17px; }
+.qh-root .qh-todo-source { background: transparent; color: var(--text-muted); border: 0; box-shadow: none; font-size: 12px; padding: 4px 0; height: auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.qh-root .qh-todo-form { display: flex; gap: 8px; margin: 10px 0; }
+.qh-root .qh-todo-input-label { flex: 1; min-width: 0; font-size: 0; }
+.qh-root .qh-todo-input-label input { width: 100%; font-size: 14px; }
+.qh-root .qh-todo-form button { width: 34px; padding: 6px; }
+.qh-root .qh-todo-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; overflow-wrap: anywhere; }
+.qh-root .qh-todo-row input { flex-shrink: 0; margin-top: 4px; }
+.qh-root .qh-todo-error { font-size: 12px; color: var(--text-error); }
+.qh-root .qh-todo-source { color: var(--qh-muted); }
+.qh-root .qh-todo-input-label input { height: 36px; border: 1px solid var(--qh-border); border-radius: 8px; background: var(--qh-field); color: var(--qh-text); box-shadow: none; }
+.qh-root .qh-todo-input-label input:focus { border-color: var(--qh-focus); }
+.qh-root .qh-todo-form button { height: 36px; background: var(--qh-field); color: var(--qh-text); border: 1px solid var(--qh-border); box-shadow: none; }
