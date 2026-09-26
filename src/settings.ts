@@ -44,6 +44,8 @@ export interface HomeSettings {
   showRecent: boolean;
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
+  captureTarget: "daily" | "inbox";
+  captureInboxPath: string;
   showRecommendations: boolean;
   hiddenRecommendations: string[];
 }
@@ -69,6 +71,8 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   commands: [],
   showRecent: true,
   showDaily: true,
+  captureTarget: "inbox",
+  captureInboxPath: "Inbox.md",
   showRecommendations: true,
   hiddenRecommendations: [],
 };
@@ -129,6 +133,8 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     commands,
     showRecent: typeof raw.showRecent === "boolean" ? raw.showRecent : defaults.showRecent,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
+    captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
+    captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
     showRecommendations: typeof raw.showRecommendations === "boolean" ? raw.showRecommendations : defaults.showRecommendations,
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };

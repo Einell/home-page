@@ -150,6 +150,21 @@ export class HomeSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName(L("主页内容", "Content")).setHeading();
     new Setting(containerEl)
+      .setName(L("快速记录保存到", "Quick capture destination"))
+      .setDesc(L("在搜索框输入后按 ⇧↵，不离开主页。", "Type in search and press Shift+Enter without leaving Home."))
+      .addDropdown((dropdown) => dropdown
+        .addOptions({ daily: L("今日日记", "Today's daily note"), inbox: "Inbox" })
+        .setValue(settings.captureTarget)
+        .onChange(async (value) => { settings.captureTarget = value as "daily" | "inbox"; await save(); this.display(); }));
+    if (settings.captureTarget === "inbox") {
+      new Setting(containerEl)
+        .setName(L("Inbox 笔记路径", "Inbox note path"))
+        .setDesc(L("库内 Markdown 路径，例如 Inbox.md 或 Inbox/速记.md。", "Vault Markdown path, for example Inbox.md."))
+        .addText((input) => input.setValue(settings.captureInboxPath).onChange(async (value) => {
+          settings.captureInboxPath = value.trim(); await save(false);
+        }));
+    }
+    new Setting(containerEl)
       .setName(L("最近笔记", "Recent notes"))
       .addToggle((toggle) => toggle.setValue(settings.showRecent).onChange(async (value) => { settings.showRecent = value; await save(); }));
     new Setting(containerEl)

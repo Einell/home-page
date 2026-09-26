@@ -402,6 +402,56 @@
   font-size: 13px;
 }
 
+.qh-today-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--qh-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.qh-today-row svg,
+.qh-bookmark svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.qh-bookmarks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.qh-bookmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--qh-border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--qh-text);
+  cursor: pointer;
+}
+
+.qh-bookmark:hover,
+.qh-today-row:hover { background: var(--qh-hover); }
+
+.qh-bookmark:focus-visible,
+.qh-today-row:focus-visible {
+  outline: 2px solid var(--qh-focus);
+  outline-offset: 2px;
+}
+
 .qh-list {
   display: flex;
   flex-direction: column;

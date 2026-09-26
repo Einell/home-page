@@ -1,6 +1,7 @@
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import { builtinActions, createNamedNote, newNote, type CreateAction } from "./actions";
 import { askAgent, canAsk } from "./agent-bridge";
+import { loadBookmarks } from "./bookmarks";
 import {
   KNOWN_PLUGINS, commandExists, installState, localized, openCommunityPluginSettings, openPluginPage, pluginName, runCommand,
 } from "./ecosystem";
@@ -10,6 +11,7 @@ import type { HomeSettings } from "./settings";
 import { HOME_CHANGED_EVENT, findHomeProviders, type HomeAction, type HomeItem, type HomeProvider, type HomeSection } from "./protocol/qiaomu-home";
 import { SEARCHABLE, noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
 import { loadActions, loadSections, searchProvider, type SourceResult } from "./sources";
+import { captureNote, todaySummary } from "./today";
 
 export const HOME_VIEW_TYPE = "qiaomu-home";
 
@@ -294,12 +296,28 @@ export class HomeView extends ItemView {
     }
     if (event.key !== "Enter" || !query) return;
     event.preventDefault();
+    if (event.shiftKey && !Keymap.isModifier(event, "Mod")) {
+      void this.capture(query);
+      return;
+    }
     if (Keymap.isModifier(event, "Mod") && canAsk(this.app)) {
       this.closeResults();
       void askAgent(this.app, query);
       return;
     }
-    this.rows[this.activeRow]?.run(event.shiftKey);
+    this.rows[this.activeRow]?.run(false);
+  }
+
+  private async capture(query: string): Promise<void> {
+    const target = this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox");
+    try {
+      await captureNote(this.app, this.plugin.settings, query);
+      if (this.inputEl.value.trim() === query) { this.inputEl.value = ""; this.onQuery(); }
+      new Notice(t("capture.saved", { target }));
+      this.refreshSoon();
+    } catch (error) {
+      new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) }));
+    }
   }
 
   private onQuery(): void {
@@ -364,6 +382,9 @@ export class HomeView extends ItemView {
     }
 
     const commands = list.createDiv({ cls: "qh-result-group qh-result-commands" });
+    this.addRow(commands, { icon: "pencil-line", title: t("search.capture", { q: query,
+      target: this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox") }),
+      hint: t("search.hint.capture"), run: () => void this.capture(query) });
     if (!notes.some((note) => note.title.toLowerCase() === query.toLowerCase())) {
       const name = noteNameFromQuery(query);
       if (name) this.addRow(commands, { icon: "file-plus", title: t("search.create", { q: name }), run: () => void createNamedNote(this.app, this.leaf, name) });
@@ -471,6 +492,9 @@ export class HomeView extends ItemView {
     next.detach();
     const first = !grid.hasChildNodes();
 
+    const todaySlot = next.createDiv({ cls: "qh-slot" });
+    const bookmarksSlot = next.createDiv({ cls: "qh-slot" });
+    void this.renderNative(todaySlot, bookmarksSlot, generation);
     if (this.plugin.settings.showRecent) this.renderRecent(next);
     const slots = providers.map(([id]) => ({ id, slot: next.createDiv({ cls: "qh-slot" }) }));
     for (const plugin of KNOWN_PLUGINS) {
@@ -489,6 +513,41 @@ export class HomeView extends ItemView {
       grid.replaceWith(next);
       this.gridEl = next;
     });
+  }
+
+  private async renderNative(todaySlot: HTMLElement, bookmarksSlot: HTMLElement, generation: number): Promise<void> {
+    if (commandExists(this.app, "daily-notes")) {
+      try {
+        const { file, characters } = await todaySummary(this.app);
+        if (generation !== this.sectionsGeneration) return;
+        const card = todaySlot.createDiv({ cls: "qh-card qh-card-compact" });
+        const head = card.createDiv({ cls: "qh-card-head" });
+        setIcon(head.createSpan({ cls: "qh-card-icon" }), "calendar-days");
+        head.createSpan({ cls: "qh-card-title", text: t("section.today") });
+        const open = () => { if (file) this.openPath(file.path, false); else runCommand(this.app, "daily-notes"); };
+        const row = card.createEl("button", { cls: "qh-today-row" });
+        row.createSpan({ text: file ? t("section.today.count", { n: characters }) : t("section.today.empty") });
+        setIcon(row.createSpan(), "arrow-up-right");
+        row.addEventListener("click", open);
+      } catch (error) { console.error("Qiaomu Home: today card failed", error); }
+    }
+    const bookmarks = await loadBookmarks(this.app);
+    if (generation !== this.sectionsGeneration || !bookmarks.length) return;
+    const card = bookmarksSlot.createDiv({ cls: "qh-card" });
+    const head = card.createDiv({ cls: "qh-card-head" });
+    setIcon(head.createSpan({ cls: "qh-card-icon" }), "bookmark");
+    head.createSpan({ cls: "qh-card-title", text: t("section.bookmarks") });
+    const list = card.createDiv({ cls: "qh-bookmarks" });
+    for (const bookmark of bookmarks) {
+      const button = list.createEl("button", { cls: "qh-bookmark" });
+      setIcon(button.createSpan(), bookmark.type === "search" ? "search" : "file-text");
+      button.createSpan({ text: bookmark.title });
+      button.addEventListener("click", () => {
+        if (bookmark.type === "search") this.openGlobalSearch(bookmark.value);
+        else if (bookmark.subpath) void this.app.workspace.openLinkText(`${bookmark.value}${bookmark.subpath}`, "", false);
+        else this.openPath(bookmark.value, false);
+      });
+    }
   }
 
   private fillSlot(slot: HTMLElement, id: string, result: SourceResult): void {
