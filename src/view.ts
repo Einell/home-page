@@ -1,21 +1,25 @@
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import { builtinActions, createNamedNote, newNote, type CreateAction } from "./actions";
 import { askAgent, canAsk } from "./agent-bridge";
+import { loadBookmarks } from "./bookmarks";
 import {
   KNOWN_PLUGINS, commandExists, installState, localized, openCommunityPluginSettings, openPluginPage, pluginName, runCommand,
 } from "./ecosystem";
 import { greeting, relativeTime, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import type { HomeSettings } from "./settings";
+import { currentPage, moduleOptions, type HomeSettings } from "./settings";
+import { addPage } from "./pages";
+import { NewPageModal } from "./page-dialogs";
+import { connectionSnapshot, connectionsChanged, connectionState } from "./connections";
 import { HOME_CHANGED_EVENT, findHomeProviders, type HomeAction, type HomeItem, type HomeProvider, type HomeSection } from "./protocol/qiaomu-home";
 import { SEARCHABLE, noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
 import { loadActions, loadSections, searchProvider, type SourceResult } from "./sources";
+import { captureNote } from "./today";
 
 export const HOME_VIEW_TYPE = "qiaomu-home";
 
 const NOTE_RESULTS = 6;
 const PROVIDER_RESULTS = 4;
-const RECENT_NOTES = 5;
 
 /** One selectable row in the search dropdown. */
 interface ResultRow {
@@ -66,6 +70,11 @@ export class HomeView extends ItemView {
   private clearEl!: HTMLElement;
   private resultsEl!: HTMLElement;
   private gridEl!: HTMLElement;
+  private tabsEl!: HTMLElement;
+  private activePageId = "";
+  private tabsSignature = "";
+  private readonly pageInstance = `qh-pages-${crypto.randomUUID()}`;
+  private connections: unknown[] = [];
 
   private rows: ResultRow[] = [];
   private activeRow = 0;
@@ -95,6 +104,7 @@ export class HomeView extends ItemView {
     this.pageEl = root.createDiv({ cls: "qh-page" });
     this.headEl = this.pageEl.createDiv({ cls: "qh-head" });
     this.buildSearch(this.pageEl.createDiv({ cls: "qh-bar" }));
+    this.tabsEl = this.pageEl.createDiv({ cls: "qh-pages" });
     this.gridEl = this.pageEl.createDiv({ cls: "qh-grid" });
     this.buildCorner(root.createDiv({ cls: "qh-corner" }));
 
@@ -108,6 +118,15 @@ export class HomeView extends ItemView {
       this.closeResults();
     });
     this.registerInterval(window.setInterval(() => this.tick(), 1000));
+    this.connections = connectionSnapshot(this.app);
+    this.registerInterval(window.setInterval(() => {
+      if (!this.contentEl.isConnected) return;
+      const next = connectionSnapshot(this.app);
+      if (!connectionsChanged(this.connections, next)) return;
+      this.connections = next;
+      this.refreshSoon();
+      if (this.inputEl.value.trim() && this.inputEl.getAttr("aria-expanded") === "true") this.onQuery();
+    }, 1500));
 
     this.renderHead();
     this.refreshContent();
@@ -294,12 +313,28 @@ export class HomeView extends ItemView {
     }
     if (event.key !== "Enter" || !query) return;
     event.preventDefault();
+    if (event.shiftKey && !Keymap.isModifier(event, "Mod")) {
+      void this.capture(query);
+      return;
+    }
     if (Keymap.isModifier(event, "Mod") && canAsk(this.app)) {
       this.closeResults();
       void askAgent(this.app, query);
       return;
     }
-    this.rows[this.activeRow]?.run(event.shiftKey);
+    this.rows[this.activeRow]?.run(false);
+  }
+
+  private async capture(query: string): Promise<void> {
+    const target = this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox");
+    try {
+      await captureNote(this.app, this.plugin.settings, query);
+      if (this.inputEl.value.trim() === query) { this.inputEl.value = ""; this.onQuery(); }
+      new Notice(t("capture.saved", { target }));
+      this.refreshSoon();
+    } catch (error) {
+      new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) }));
+    }
   }
 
   private onQuery(): void {
@@ -364,6 +399,9 @@ export class HomeView extends ItemView {
     }
 
     const commands = list.createDiv({ cls: "qh-result-group qh-result-commands" });
+    this.addRow(commands, { icon: "pencil-line", title: t("search.capture", { q: query,
+      target: this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox") }),
+      hint: t("search.hint.capture"), run: () => void this.capture(query) });
     if (!notes.some((note) => note.title.toLowerCase() === query.toLowerCase())) {
       const name = noteNameFromQuery(query);
       if (name) this.addRow(commands, { icon: "file-plus", title: t("search.create", { q: name }), run: () => void createNamedNote(this.app, this.leaf, name) });
@@ -458,37 +496,128 @@ export class HomeView extends ItemView {
 
   // Continue area ----------------------------------------------------------
 
+  private renderPages(): void {
+    const settings = this.plugin.settings;
+    const page = currentPage(settings);
+    if (page.id !== this.activePageId) {
+      this.activePageId = page.id;
+      // Invalidate the former page immediately: slower sources must not flash through.
+      this.gridEl.empty();
+    }
+    const signature = JSON.stringify([settings.tabsEnabled, page.id, settings.pages.map((item) => [item.id, item.name])]);
+    if (signature === this.tabsSignature) return;
+    this.tabsSignature = signature;
+    this.tabsEl.empty();
+    this.tabsEl.toggleClass("is-off", !settings.tabsEnabled);
+    if (!settings.tabsEnabled) return;
+    const label = this.tabsEl.createSpan({ cls: "qh-sr-only", text: t("pages.label") });
+    label.id = `${this.pageInstance}-label`;
+    const list = this.tabsEl.createDiv({ cls: "qh-page-tabs", attr: { role: "tablist", "aria-labelledby": label.id } });
+    const select = (id: string, focus: boolean) => {
+      if (id === settings.activePageId) return;
+      settings.activePageId = id;
+      this.plugin.eachView((view) => view.refreshContent());
+      if (focus) this.tabsEl.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
+      void this.plugin.saveSettings({ rerender: false });
+    };
+    settings.pages.forEach((item, index) => {
+      const selected = item.id === page.id;
+      const button = list.createEl("button", { cls: "qh-page-tab", text: item.name || t("pages.default"),
+        attr: { role: "tab", "aria-selected": String(selected), "aria-controls": `${this.pageInstance}-panel` } });
+      button.id = `${this.pageInstance}-tab-${index}`;
+      button.tabIndex = selected ? 0 : -1;
+      button.addEventListener("click", () => select(item.id, true));
+      button.addEventListener("keydown", (event) => {
+        let next: number;
+        if (event.key === "ArrowRight") next = (index + 1) % settings.pages.length;
+        else if (event.key === "ArrowLeft") next = (index - 1 + settings.pages.length) % settings.pages.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = settings.pages.length - 1;
+        else return;
+        event.preventDefault();
+        select(settings.pages[next].id, true);
+      });
+    });
+    const add = this.tabsEl.createEl("button", { cls: "qh-icon-button qh-page-add" });
+    setIcon(add, "plus"); hiddenLabel(add, t("pages.add"));
+    add.addEventListener("click", () => new NewPageModal(this.app, async (name) => {
+      const created = addPage(settings, name);
+      await this.plugin.saveSettings();
+      this.plugin.openSettings(created.id);
+    }).open());
+  }
+
   private refreshContent(): void {
     if (!this.gridEl) return;
+    this.renderPages();
     this.renderCreate();
     const generation = ++this.sectionsGeneration;
-    const providers = sortedProviders(findHomeProviders(this.app));
+    const providers = sortedProviders(findHomeProviders(this.app))
+      .filter(([id]) => moduleOptions(this.plugin.settings, id).visible);
     const withProvider = new Set(providers.map(([id]) => id));
     const grid = this.gridEl;
     // Build the new grid off-screen and swap it in once, so refreshes do not flicker.
     // The first render swaps immediately so local cards show without waiting for slower sources.
     const next = this.contentEl.createDiv({ cls: "qh-grid" });
+    next.id = `${this.pageInstance}-panel`;
+    if (this.plugin.settings.tabsEnabled) {
+      next.setAttr("role", "tabpanel");
+      next.setAttr("aria-labelledby", `${this.pageInstance}-tab-${this.plugin.settings.pages.indexOf(currentPage(this.plugin.settings))}`);
+      next.tabIndex = 0;
+    }
     next.detach();
     const first = !grid.hasChildNodes();
 
-    if (this.plugin.settings.showRecent) this.renderRecent(next);
+    if (moduleOptions(this.plugin.settings, "recent").visible) this.renderRecent(next);
+    let bookmarksReady: Promise<void> = Promise.resolve();
+    if (moduleOptions(this.plugin.settings, "bookmarks").visible) {
+      const bookmarksSlot = next.createDiv({ cls: "qh-slot" });
+      bookmarksReady = this.renderBookmarks(bookmarksSlot, generation);
+    }
     const slots = providers.map(([id]) => ({ id, slot: next.createDiv({ cls: "qh-slot" }) }));
     for (const plugin of KNOWN_PLUGINS) {
-      if (withProvider.has(plugin.id) || installState(this.app, plugin.id) !== "enabled") continue;
+      if (!moduleOptions(this.plugin.settings, plugin.id).visible || withProvider.has(plugin.id) || installState(this.app, plugin.id) !== "enabled") continue;
       this.renderLegacy(next, plugin.id);
     }
     this.renderRecommendations(next);
 
     if (first) { grid.replaceWith(next); this.gridEl = next; }
-    void Promise.all(providers.map(async ([id, provider], index) => {
+    void Promise.all([bookmarksReady, ...providers.map(async ([id, provider], index) => {
       const result = await loadSections(provider);
       if (generation !== this.sectionsGeneration) return;
       this.fillSlot(slots[index].slot, id, result);
-    })).then(() => {
-      if (generation !== this.sectionsGeneration || first) return;
+    })]).then(() => {
+      if (generation !== this.sectionsGeneration) return;
+      if (this.plugin.settings.tabsEnabled && !next.querySelector(".qh-card")) {
+        const empty = next.createDiv({ cls: "qh-page-empty" });
+        empty.createDiv({ text: t("pages.empty") });
+        const configure = empty.createEl("button", { cls: "qh-pill", text: t("pages.configure") });
+        configure.addEventListener("click", () => this.plugin.openSettings(currentPage(this.plugin.settings).id));
+      }
+      if (first) return;
       grid.replaceWith(next);
       this.gridEl = next;
     });
+  }
+
+  private async renderBookmarks(bookmarksSlot: HTMLElement, generation: number): Promise<void> {
+    const bookmarks = await loadBookmarks(this.app, moduleOptions(this.plugin.settings, "bookmarks").limit);
+    if (generation !== this.sectionsGeneration || !bookmarks.length) return;
+    const card = bookmarksSlot.createDiv({ cls: "qh-card" });
+    const head = card.createDiv({ cls: "qh-card-head" });
+    setIcon(head.createSpan({ cls: "qh-card-icon" }), "bookmark");
+    head.createSpan({ cls: "qh-card-title", text: t("section.bookmarks") });
+    const list = card.createDiv({ cls: "qh-bookmarks" });
+    for (const bookmark of bookmarks) {
+      const button = list.createEl("button", { cls: "qh-bookmark" });
+      setIcon(button.createSpan(), bookmark.type === "search" ? "search" : "file-text");
+      button.createSpan({ text: bookmark.title });
+      button.addEventListener("click", () => {
+        if (bookmark.type === "search") this.openGlobalSearch(bookmark.value);
+        else if (bookmark.subpath) void this.app.workspace.openLinkText(`${bookmark.value}${bookmark.subpath}`, "", false);
+        else this.openPath(bookmark.value, false);
+      });
+    }
   }
 
   private fillSlot(slot: HTMLElement, id: string, result: SourceResult): void {
@@ -497,7 +626,8 @@ export class HomeView extends ItemView {
       card.createDiv({ cls: "qh-card-empty", text: t("error.source", { name: pluginName(this.app, id) }) });
       return;
     }
-    for (const section of result.sections) this.renderSection(slot, id, section);
+    const limit = moduleOptions(this.plugin.settings, id).limit;
+    for (const section of result.sections) this.renderSection(slot, id, { ...section, items: section.items.slice(0, limit) });
   }
 
   private renderSection(parent: HTMLElement, sourceId: string, section: HomeSection): void {
@@ -562,7 +692,7 @@ export class HomeView extends ItemView {
     const files = this.app.workspace.getLastOpenFiles()
       .map((path) => this.app.vault.getAbstractFileByPath(path))
       .filter((file): file is TFile => file instanceof TFile && SEARCHABLE.has(file.extension.toLowerCase()))
-      .slice(0, RECENT_NOTES);
+      .slice(0, moduleOptions(this.plugin.settings, "recent").limit);
     if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: t("section.recent.empty") }); return; }
     const list = card.createDiv({ cls: "qh-list" });
     for (const file of files) {
@@ -574,7 +704,7 @@ export class HomeView extends ItemView {
     }
   }
 
-  /** An enabled Qiaomu plugin whose installed version predates the Home protocol: offer to open it. */
+  /** Missing/unsupported integration is not evidence that the installed release is outdated. */
   private renderLegacy(parent: HTMLElement, id: string): void {
     const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
     if (!known || !commandExists(this.app, known.openCommand)) return;
@@ -583,12 +713,13 @@ export class HomeView extends ItemView {
     setIcon(head.createSpan({ cls: "qh-card-icon" }), known.icon);
     head.createSpan({ cls: "qh-card-title", text: localized(known.name) });
     this.actionButton(head, { id: "open", label: t("legacy.open"), icon: "arrow-up-right", run: () => { runCommand(this.app, known.openCommand); } }, "qh-card-more", true);
-    card.createDiv({ cls: "qh-card-empty", text: t("legacy.update") });
+    this.actionButton(head, { id: "retry", label: t("legacy.retry"), icon: "refresh-cw", run: () => this.refreshContent() }, "qh-card-more", false);
+    card.createDiv({ cls: "qh-card-empty", text: t(connectionState(this.app, id) === "incompatible" ? "legacy.incompatible" : "legacy.unavailable") });
   }
 
   private renderRecommendations(parent: HTMLElement): void {
     const settings = this.plugin.settings;
-    if (!settings.showRecommendations) return;
+    if (!currentPage(settings).showRecommendations) return;
     const missing = KNOWN_PLUGINS
       .map((plugin) => ({ plugin, state: installState(this.app, plugin.id) }))
       .filter(({ plugin, state }) => state !== "enabled" && !settings.hiddenRecommendations.includes(plugin.id));

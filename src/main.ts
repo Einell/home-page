@@ -11,6 +11,7 @@ const CLAIM_DELAY_MS = 40;
 export default class QiaomuHomePlugin extends Plugin {
   settings: HomeSettings = structuredClone(DEFAULT_SETTINGS);
   wallpaper!: WallpaperService;
+  private homeSettingTab!: HomeSettingTab;
   private claimTimer: number | null = null;
   private claiming = new WeakSet<WorkspaceLeaf>();
 
@@ -30,7 +31,8 @@ export default class QiaomuHomePlugin extends Plugin {
         return true;
       },
     });
-    this.addSettingTab(new HomeSettingTab(this.app, this));
+    this.homeSettingTab = new HomeSettingTab(this.app, this);
+    this.addSettingTab(this.homeSettingTab);
 
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.openOnStartup) void this.openHome({ startup: true });
@@ -55,7 +57,8 @@ export default class QiaomuHomePlugin extends Plugin {
   }
 
   /** Opens this plugin's page in Obsidian settings. */
-  openSettings(): void {
+  openSettings(pageId?: string): void {
+    this.homeSettingTab.editPage(pageId);
     const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): unknown } }).setting;
     setting?.open?.();
     setting?.openTabById?.(this.manifest.id);

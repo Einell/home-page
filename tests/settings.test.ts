@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../src/settings";
+import { DEFAULT_SETTINGS, moduleOptions, normalizeSettings } from "../src/settings";
 import { nextCurated, curatedPhotos, sizedUrl, targetWidth } from "../src/wallpaper/wallpaper";
 
 describe("normalizeSettings", () => {
@@ -21,6 +21,15 @@ describe("normalizeSettings", () => {
     expect(settings.wallpaper.current).toBeNull();
     expect(settings.actions).toEqual(["builtin:canvas"]);
     expect(settings.commands).toEqual([{ id: "app:reload", label: "app:reload", icon: "terminal-square" }]);
+  });
+
+  it("defaults every card to three items and preserves earlier Recent visibility", () => {
+    const defaults = normalizeSettings(null);
+    expect(moduleOptions(defaults, "recent")).toEqual({ visible: true, limit: 3 });
+    expect(moduleOptions(defaults, "qiaomu-reader")).toEqual({ visible: true, limit: 3 });
+    const migrated = normalizeSettings({ showRecent: false, moduleOptions: { "qiaomu-reader": { visible: false, limit: 9 } } });
+    expect(moduleOptions(migrated, "recent")).toEqual({ visible: false, limit: 3 });
+    expect(moduleOptions(migrated, "qiaomu-reader")).toEqual({ visible: false, limit: 6 });
   });
 });
 
