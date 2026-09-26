@@ -27,6 +27,7 @@ export interface HomePage {
   id: string;
   name: string;
   moduleOptions: Record<string, ModuleOptions>;
+  moduleOrder: string[];
   /** Existing layouts show newly discovered modules; a new blank page opts in. */
   defaultVisible: boolean;
   showRecommendations: boolean;
@@ -84,7 +85,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   commands: [],
   tabsEnabled: false,
   activePageId: "home",
-  pages: [{ id: "home", name: "", moduleOptions: {}, defaultVisible: true, showRecommendations: true }],
+  pages: [{ id: "home", name: "", moduleOptions: {}, moduleOrder: [], defaultVisible: true, showRecommendations: true }],
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
@@ -120,7 +121,19 @@ export function currentPage(settings: HomeSettings, pageId?: string): HomePage {
 
 export function moduleOptions(settings: HomeSettings, id: string, pageId?: string): ModuleOptions {
   const page = currentPage(settings, pageId);
-  return Object.hasOwn(page.moduleOptions, id) ? page.moduleOptions[id] : { ...DEFAULT_MODULE_OPTIONS, visible: page.defaultVisible };
+  if (Object.hasOwn(page.moduleOptions, id)) return page.moduleOptions[id];
+  const parent = moduleSource(id);
+  if (parent && Object.hasOwn(page.moduleOptions, parent)) return page.moduleOptions[parent];
+  return { ...DEFAULT_MODULE_OPTIONS, visible: page.defaultVisible };
+}
+
+export function sectionKey(source: string, section: string): string {
+  return `section:${encodeURIComponent(source)}:${encodeURIComponent(section)}`;
+}
+
+export function moduleSource(key: string): string | undefined {
+  if (!key.startsWith("section:")) return undefined;
+  try { return decodeURIComponent(key.split(":")[1]); } catch { return undefined; }
 }
 
 /** Migrate the single-page layout only when there are no usable saved pages. */
@@ -131,10 +144,10 @@ function normalizePages(raw: Record<string, unknown>, modules: Record<string, Mo
     const page = entry as Record<string, unknown>;
     if (typeof page.id !== "string" || !page.id || pages.some((saved) => saved.id === page.id)) continue;
     pages.push({ id: page.id, name: text(page.name).trim().slice(0, 80),
-      moduleOptions: normalizeModules(page.moduleOptions), defaultVisible: page.defaultVisible !== false,
+      moduleOptions: normalizeModules(page.moduleOptions), moduleOrder: [...new Set(strings(page.moduleOrder))], defaultVisible: page.defaultVisible !== false,
       showRecommendations: page.showRecommendations === true });
   }
-  return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, defaultVisible: true,
+  return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, moduleOrder: [], defaultVisible: true,
     showRecommendations: typeof raw.showRecommendations === "boolean" ? raw.showRecommendations : true }];
 }
 

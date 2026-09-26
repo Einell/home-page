@@ -1,14 +1,11 @@
 import { AbstractInputSuggest, FuzzySuggestModal, PluginSettingTab, SecretComponent, Setting, TFile, setIcon, type App } from "obsidian";
-import { KNOWN_PLUGINS, listCommands, localized, pluginName } from "./ecosystem";
+import { listCommands } from "./ecosystem";
 import { isChinese, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { currentPage, moduleOptions, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
-import { findHomeProviders } from "./protocol/qiaomu-home";
+import { currentPage, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
 import { collectActions } from "./view";
 import { isImagePath } from "./wallpaper/wallpaper";
 
-import { addPage, movePage, removePage } from "./pages";
-import { DeletePageModal, NewPageModal } from "./page-dialogs";
 
 const L = (zh: string, en: string): string => isChinese() ? zh : en;
 
@@ -55,13 +52,6 @@ function iconButton(parent: HTMLElement, icon: string, label: string, onClick: (
 }
 
 export class HomeSettingTab extends PluginSettingTab {
-  private editingPageId?: string;
-  private scrollToPage = false;
-
-  editPage(id?: string): void {
-    this.editingPageId = id;
-    this.scrollToPage = Boolean(id);
-  }
   constructor(app: App, private plugin: QiaomuHomePlugin) { super(app, plugin); }
 
   display(): void {
@@ -175,65 +165,32 @@ export class HomeSettingTab extends PluginSettingTab {
           settings.captureInboxPath = value.trim(); await save(false);
         }));
     }
-    const pageHeading = new Setting(containerEl).setName(L("页签与模块", "Pages and cards")).setHeading();
+    new Setting(containerEl).setName(L("主页布局", "Home layout")).setHeading();
     new Setting(containerEl).setName(L("启用页签模式", "Enable pages"))
-      .setDesc(L("每页独立设置模块和条数；关闭后显示第一个页签。", "Each page has its own cards and item counts. When off, Home shows the first page."))
+      .setDesc(L("关闭后显示第一个页签，其他页签的配置仍会保留。", "When off, show the first page while keeping all other page layouts."))
       .addToggle((toggle) => toggle.setValue(settings.tabsEnabled).onChange(async (value) => {
-        settings.tabsEnabled = value; this.editingPageId = undefined; await save(); this.display();
+        settings.tabsEnabled = value; await save();
       }));
-    const page = currentPage(settings, settings.tabsEnabled ? this.editingPageId : undefined);
-    this.editingPageId = page.id;
-    if (settings.tabsEnabled) {
-      new Setting(containerEl).setName(L("配置页签", "Edit page"))
-        .addDropdown((dropdown) => dropdown.addOptions(Object.fromEntries(settings.pages.map((item) => [item.id, item.name || t("pages.default")])))
-          .setValue(page.id).onChange((id) => { this.editingPageId = id; this.display(); }))
-        .addButton((button) => button.setButtonText(t("pages.add")).onClick(() => {
-          new NewPageModal(this.app, async (name) => {
-            this.editingPageId = addPage(settings, name).id;
-            await save(); this.display();
-          }).open();
-        }));
-      new Setting(containerEl).setName(t("pages.name"))
-        .addText((input) => {
-          input.setValue(page.name || t("pages.default"));
-          input.inputEl.maxLength = 80;
-          input.inputEl.addEventListener("change", () => {
-            page.name = input.getValue().trim().slice(0, 80);
-            void save().then(() => this.display());
-          });
-        });
-      const order = new Setting(containerEl).setName(L("页签顺序", "Page order"));
-      const index = settings.pages.indexOf(page);
-      iconButton(order.controlEl, "arrow-left", L("前移", "Move earlier"), () => {
-        movePage(settings, page.id, -1); void save().then(() => this.display());
-      }, index === 0);
-      iconButton(order.controlEl, "arrow-right", L("后移", "Move later"), () => {
-        movePage(settings, page.id, 1); void save().then(() => this.display());
-      }, index === settings.pages.length - 1);
-      order.addButton((button) => button.setButtonText(t("pages.delete")).setDisabled(settings.pages.length === 1).onClick(() => {
-        new DeletePageModal(this.app, page.name || t("pages.default"), async () => {
-          removePage(settings, page.id); this.editingPageId = undefined; await save(); this.display();
-        }).open();
+    new Setting(containerEl).setName(L("在主页配置内容", "Arrange content on Home"))
+      .setDesc(L("添加模块、调整卡片和管理页签，都可以直接在主页完成。", "Add modules, arrange cards and manage pages directly on Home."))
+      .addButton((button) => button.setButtonText(t("library.title")).onClick(async () => {
+        const setting = (this.app as unknown as { setting?: { close?(): void } }).setting;
+        setting?.close?.();
+        (await this.plugin.openHome())?.openLibrary();
+      }))
+      .addButton((button) => button.setButtonText(t("pages.add")).onClick(async () => {
+        const setting = (this.app as unknown as { setting?: { close?(): void } }).setting;
+        setting?.close?.();
+        (await this.plugin.openHome())?.addPage();
       }));
-    }
-    if (this.scrollToPage) { pageHeading.settingEl.scrollIntoView({ block: "start" }); this.scrollToPage = false; }
-    this.renderModuleOption(containerEl, "recent", L("最近笔记", "Recent notes"));
-    this.renderModuleOption(containerEl, "bookmarks", L("常用书签", "Bookmarks"));
-    const ids = new Set([...KNOWN_PLUGINS.map((plugin) => plugin.id), ...findHomeProviders(this.app).map(([id]) => id)]);
-    for (const id of ids) {
-      const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
-      this.renderModuleOption(containerEl, id, known ? localized(known.name) : pluginName(this.app, id));
-    }
-    new Setting(containerEl)
-      .setName(L("推荐乔木插件", "Suggest Qiaomu plugins"))
-      .setDesc(settings.hiddenRecommendations.length ? L(`已隐藏 ${settings.hiddenRecommendations.length} 个推荐。`, `${settings.hiddenRecommendations.length} hidden.`) : "")
-      .addToggle((toggle) => toggle.setValue(page.showRecommendations).onChange(async (value) => { page.showRecommendations = value; await save(); }))
+
+    new Setting(containerEl).setName(L("当前页显示插件推荐", "Show plugin suggestions on the current page"))
+      .addToggle((toggle) => toggle.setValue(currentPage(settings).showRecommendations).onChange(async (value) => {
+        currentPage(settings).showRecommendations = value; await save();
+      }))
       .then((setting) => {
-        if (!settings.hiddenRecommendations.length) return;
-        setting.addButton((button) => button.setButtonText(L("全部恢复", "Show all")).onClick(async () => {
-          settings.hiddenRecommendations = [];
-          await save();
-          this.display();
+        if (settings.hiddenRecommendations.length) setting.addButton((button) => button.setButtonText(L("恢复隐藏推荐", "Restore hidden suggestions")).onClick(async () => {
+          settings.hiddenRecommendations = []; await save(); button.setDisabled(true);
         }));
       });
 
@@ -248,28 +205,6 @@ export class HomeSettingTab extends PluginSettingTab {
         fragment.appendText(" · ");
         fragment.createEl("a", { text: "GitHub", href: REPO });
       }));
-  }
-
-  private renderModuleOption(containerEl: HTMLElement, id: string, name: string): void {
-    const settings = this.plugin.settings;
-    const page = currentPage(settings, this.editingPageId);
-    const current = moduleOptions(settings, id, page.id);
-    new Setting(containerEl)
-      .setName(name)
-      .addToggle((toggle) => toggle.setValue(current.visible).onChange(async (visible) => {
-        page.moduleOptions[id] = { ...moduleOptions(settings, id, page.id), visible };
-        await this.plugin.saveSettings();
-      }))
-      .addDropdown((dropdown) => dropdown
-        .addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, index) => {
-          const n = index + 1;
-          return [String(n), L(`${n} 条`, `${n} items`)];
-        })))
-        .setValue(String(current.limit))
-        .onChange(async (value) => {
-          page.moduleOptions[id] = { ...moduleOptions(settings, id, page.id), limit: Number(value) };
-          await this.plugin.saveSettings();
-        }));
   }
 
   private renderActions(containerEl: HTMLElement): void {

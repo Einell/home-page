@@ -12,6 +12,7 @@ export default class QiaomuHomePlugin extends Plugin {
   settings: HomeSettings = structuredClone(DEFAULT_SETTINGS);
   wallpaper!: WallpaperService;
   private homeSettingTab!: HomeSettingTab;
+  private saveQueue: Promise<void> = Promise.resolve();
   private claimTimer: number | null = null;
   private claiming = new WeakSet<WorkspaceLeaf>();
 
@@ -52,13 +53,15 @@ export default class QiaomuHomePlugin extends Plugin {
   }
 
   async saveSettings(options: { rerender?: boolean } = {}): Promise<void> {
-    await this.saveData(this.settings);
+    const snapshot = structuredClone(this.settings);
+    const save = this.saveQueue.catch(() => {}).then(() => this.saveData(snapshot));
+    this.saveQueue = save;
+    await save;
     if (options.rerender !== false) this.eachView((view) => view.render());
   }
 
   /** Opens this plugin's page in Obsidian settings. */
-  openSettings(pageId?: string): void {
-    this.homeSettingTab.editPage(pageId);
+  openSettings(): void {
     const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): unknown } }).setting;
     setting?.open?.();
     setting?.openTabById?.(this.manifest.id);
