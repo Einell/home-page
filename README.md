@@ -6,7 +6,7 @@
 
 > A calm start page for Obsidian: find a note, create something, and pick up where you left off.
 
-[下载 0.1.0](https://github.com/joeseesun/qiaomu-home/releases/tag/0.1.0) · [使用说明](#手动安装) · [报告问题](https://github.com/joeseesun/qiaomu-home/issues) · [许可证](LICENSE)
+[在 Obsidian 安装](https://community.obsidian.md/plugins/qiaomu-home) · [下载 0.1.0](https://github.com/joeseesun/qiaomu-home/releases/tag/0.1.0) · [报告问题](https://github.com/joeseesun/qiaomu-home/issues) · [许可证](LICENSE)
 
 乔木Home 把 Obsidian 的启动页和空白新标签页换成一个安静的起点：大字时间、Unsplash 壁纸、一个能搜笔记也能问 AI 的搜索框、一排快捷新建按钮，以及「继续」卡片——最近的笔记、在读的书、未读的文章、刚才听的电台、上次的 AI 对话。
 
@@ -44,7 +44,7 @@
 
 ## 手动安装
 
-下载同一版本 Release 的 `main.js`、`manifest.json`、`styles.css`，放进库的 `.obsidian/plugins/qiaomu-home/`，然后在 Obsidian 设置中启用「Qiaomu Home」。需要 Obsidian 1.11.4 或更新版本。首次社区目录审核完成前，请使用手动安装。
+推荐从 [Obsidian 社区目录](https://community.obsidian.md/plugins/qiaomu-home) 安装。也可下载同一版本 Release 的 `main.js`、`manifest.json`、`styles.css`，放进库的 `.obsidian/plugins/qiaomu-home/`，然后在 Obsidian 设置中启用「Qiaomu Home」。需要 Obsidian 1.11.4 或更新版本。0.1.0 已通过官方自动扫描；人工复核状态另行确认。
 
 如需从源码构建，请看下方开发说明。桌面端已在本地库验证；移动端尚无真机验收。
 
@@ -71,7 +71,7 @@ Qiaomu Home replaces Obsidian's startup page and empty new tabs with search, qui
 
 ## Install
 
-Download `main.js`, `manifest.json`, and `styles.css` from the [0.1.0 release](https://github.com/joeseesun/qiaomu-home/releases/tag/0.1.0) into `.obsidian/plugins/qiaomu-home/` in your vault, then enable Qiaomu Home in Obsidian. Requires Obsidian 1.11.4 or newer. The community directory listing is pending its initial review.
+Install from the [Obsidian community directory](https://community.obsidian.md/plugins/qiaomu-home). Alternatively, download `main.js`, `manifest.json`, and `styles.css` from the [0.1.0 release](https://github.com/joeseesun/qiaomu-home/releases/tag/0.1.0) into `.obsidian/plugins/qiaomu-home/` in your vault, then enable Qiaomu Home in Obsidian. Requires Obsidian 1.11.4 or newer. Version 0.1.0 passed the automated scan; manual review is a separate stage.
 
 To build from source, run `npm install && npm run check` and copy the same three files. Desktop has been checked in a local vault; mobile has not been verified on a physical device.
 
