@@ -16,7 +16,10 @@ export class ModuleLibrary extends Modal {
   private timer: number | null = null;
   private snapshot: unknown[] = [];
 
-  constructor(private plugin: QiaomuHomePlugin, private pageId: string) { super(plugin.app); }
+  constructor(private plugin: QiaomuHomePlugin, private pageId: string) {
+    super(plugin.app);
+    plugin.register(() => this.close());
+  }
 
   onOpen(): void {
     this.modalEl.addClass("qh-library-modal");
