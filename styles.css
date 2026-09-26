@@ -1,0 +1,736 @@
+/* Qiaomu Home. Every rule is scoped to the plugin's own view or settings. */
+
+.qh-root {
+  --qh-dim: 0.35;
+  --qh-text: var(--text-normal);
+  --qh-muted: var(--text-muted);
+  --qh-faint: var(--text-faint);
+  --qh-surface: var(--background-secondary);
+  --qh-hover: var(--background-modifier-hover);
+  --qh-border: var(--background-modifier-border);
+  --qh-field: var(--background-primary-alt);
+  --qh-popover: var(--background-primary);
+  --qh-focus: var(--background-modifier-border-focus);
+  --qh-live: #2fb67c;
+  --qh-blur: none;
+  position: relative;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: var(--background-primary);
+  container-type: inline-size;
+}
+
+.qh-root.qh-has-photo {
+  --qh-text: rgba(255, 255, 255, 0.96);
+  --qh-muted: rgba(255, 255, 255, 0.74);
+  --qh-faint: rgba(255, 255, 255, 0.52);
+  --qh-surface: rgba(16, 16, 20, 0.44);
+  --qh-hover: rgba(255, 255, 255, 0.1);
+  --qh-border: rgba(255, 255, 255, 0.13);
+  --qh-field: rgba(20, 20, 24, 0.52);
+  --qh-popover: rgba(22, 22, 26, 0.94);
+  --qh-focus: rgba(255, 255, 255, 0.42);
+  --qh-live: #5ee0a2;
+  --qh-blur: blur(22px) saturate(1.25);
+  background: var(--qh-photo-color, #16161a);
+  color-scheme: dark;
+}
+
+.qh-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.qh-photo {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+.qh-photo.is-loaded {
+  opacity: 1;
+}
+
+.qh-shade {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: linear-gradient(180deg,
+    rgba(0, 0, 0, calc(var(--qh-dim) * 0.75)) 0%,
+    rgba(0, 0, 0, var(--qh-dim)) 55%,
+    rgba(0, 0, 0, calc(var(--qh-dim) + 0.15)) 100%);
+}
+
+.qh-has-photo .qh-shade {
+  display: block;
+}
+
+.qh-page {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: clamp(40px, 15vh, 150px) 24px 72px;
+  overflow-y: auto;
+  color: var(--qh-text);
+}
+
+.qh-page > * {
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
+}
+
+/* Header */
+
+.qh-head {
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.qh-time {
+  font-size: 88px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.qh-sub {
+  margin-top: 12px;
+  color: var(--qh-muted);
+  font-size: 15px;
+}
+
+.qh-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 44px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.qh-brand-mark svg {
+  width: 42px;
+  height: 42px;
+  stroke-width: 1.75;
+}
+
+/* Search and new note */
+
+.qh-bar {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.qh-search {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 52px;
+  padding: 0 8px 0 18px;
+  border: 1px solid var(--qh-border);
+  border-radius: 14px;
+  background: var(--qh-field);
+  backdrop-filter: var(--qh-blur);
+}
+
+.qh-search:focus-within {
+  border-color: var(--qh-focus);
+}
+
+.qh-search-icon {
+  display: flex;
+  color: var(--qh-faint);
+  cursor: text;
+}
+
+.qh-root .qh-search-input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--qh-text);
+  font-size: 16px;
+}
+
+/* Obsidian styles search inputs on hover/focus with a solid field; the whole bar is the field here. */
+.qh-root .qh-search .qh-search-input,
+.qh-root .qh-search .qh-search-input:hover,
+.qh-root .qh-search .qh-search-input:focus,
+.qh-root .qh-search .qh-search-input:focus-visible,
+.qh-root .qh-search .qh-search-input:active {
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.qh-search:hover {
+  border-color: var(--qh-focus);
+}
+
+.qh-search-input::placeholder {
+  color: var(--qh-faint);
+}
+
+.qh-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* Create: today, new note, ▾ menu */
+
+.qh-create {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.qh-split {
+  display: flex;
+}
+
+.qh-root .qh-pill-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 18px;
+  border: 1px solid var(--qh-border);
+  border-radius: 14px;
+  background: var(--qh-field);
+  box-shadow: none;
+  backdrop-filter: var(--qh-blur);
+  color: var(--qh-text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.qh-root .qh-pill-button:hover {
+  border-color: var(--qh-focus);
+  background: var(--qh-hover);
+}
+
+.qh-root .qh-pill-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--qh-focus);
+}
+
+.qh-root .qh-split .qh-new {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.qh-root .qh-split .qh-new-more {
+  margin-left: -1px;
+  padding: 0 10px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  color: var(--qh-muted);
+}
+
+.qh-pill-icon {
+  display: flex;
+}
+
+.qh-pill-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Search results */
+
+.qh-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -1px;
+  left: -1px;
+  z-index: 10;
+  max-height: min(60vh, 520px);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--qh-border);
+  border-radius: 14px;
+  background: var(--qh-popover);
+  box-shadow: var(--shadow-l);
+  backdrop-filter: var(--qh-blur);
+}
+
+.qh-result-group:empty {
+  display: none;
+}
+
+.qh-result-commands {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--qh-border);
+}
+
+.qh-result-heading {
+  padding: 8px 10px 4px;
+  color: var(--qh-faint);
+  font-size: 12px;
+}
+
+.qh-result-empty {
+  padding: 6px 10px 8px;
+  color: var(--qh-faint);
+  font-size: 13px;
+}
+
+.qh-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.qh-result.is-active {
+  background: var(--qh-hover);
+}
+
+.qh-result-icon {
+  display: flex;
+  flex: none;
+  color: var(--qh-muted);
+}
+
+.qh-result-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qh-result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.qh-result-title,
+.qh-result-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qh-result-title {
+  font-size: 14px;
+}
+
+.qh-result-detail {
+  margin-top: 1px;
+  color: var(--qh-faint);
+  font-size: 12px;
+}
+
+.qh-result-hint {
+  flex: none;
+  color: var(--qh-faint);
+  font-size: 11px;
+}
+
+/* Continue cards */
+
+.qh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-items: start;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.qh-slot {
+  display: contents;
+}
+
+.qh-card {
+  min-width: 0;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--qh-border);
+  border-radius: 16px;
+  background: var(--qh-surface);
+  backdrop-filter: var(--qh-blur);
+}
+
+.qh-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin-bottom: 4px;
+  color: var(--qh-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qh-card-icon {
+  display: flex;
+}
+
+.qh-card-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qh-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qh-card-empty {
+  padding: 4px 0 10px;
+  color: var(--qh-faint);
+  font-size: 13px;
+}
+
+.qh-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.qh-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -6px;
+  padding: 7px 6px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.qh-item:hover {
+  background: var(--qh-hover);
+}
+
+.qh-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--qh-focus);
+}
+
+.qh-item-static {
+  cursor: default;
+}
+
+.qh-item-static:hover {
+  background: none;
+}
+
+.qh-thumb {
+  display: grid;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--qh-hover);
+  color: var(--qh-muted);
+}
+
+.qh-thumb svg {
+  width: 17px;
+  height: 17px;
+}
+
+.qh-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qh-card[data-source="qiaomu-reader"] .qh-thumb {
+  width: 32px;
+  height: 46px;
+  border-radius: 4px;
+}
+
+.qh-item.is-active .qh-thumb {
+  box-shadow: 0 0 0 2px var(--qh-live);
+}
+
+.qh-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qh-item-title,
+.qh-item-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qh-item-title {
+  color: var(--qh-text);
+  font-size: 14px;
+}
+
+.qh-item-sub {
+  margin-top: 2px;
+  color: var(--qh-faint);
+  font-size: 12px;
+}
+
+.qh-progress {
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--qh-border);
+}
+
+.qh-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--qh-muted);
+}
+
+.qh-root .qh-icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: auto;
+  padding: 6px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  box-shadow: none;
+  color: var(--qh-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.qh-root .qh-icon-button:hover {
+  background: var(--qh-hover);
+  color: var(--qh-text);
+}
+
+.qh-root .qh-icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--qh-focus);
+}
+
+.qh-button-icon {
+  display: flex;
+}
+
+.qh-icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qh-card-more {
+  margin-right: -6px;
+}
+
+.qh-root .qh-pill {
+  flex: none;
+  height: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--qh-border);
+  border-radius: 999px;
+  background: var(--qh-hover);
+  box-shadow: none;
+  color: var(--qh-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.qh-root .qh-pill:hover {
+  border-color: var(--qh-focus);
+}
+
+/* Top-right corner: credit, change wallpaper, settings (the status bar owns the bottom-right). */
+
+.qh-corner {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qh-credit {
+  margin-right: 4px;
+  font-size: 11px;
+}
+
+.qh-root .qh-credit-link {
+  color: var(--qh-faint);
+  text-decoration: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.qh-root .qh-credit-link:hover {
+  color: var(--qh-text);
+  text-decoration: underline;
+}
+
+.qh-root .qh-corner-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--qh-border);
+  border-radius: 50%;
+  background: var(--qh-field);
+  box-shadow: none;
+  backdrop-filter: var(--qh-blur);
+  color: var(--qh-muted);
+  cursor: pointer;
+}
+
+.qh-root .qh-corner-button:hover {
+  border-color: var(--qh-focus);
+  color: var(--qh-text);
+}
+
+.qh-root .qh-corner-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--qh-focus);
+}
+
+.qh-corner-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qh-corner-button.is-spinning svg {
+  animation: qh-spin 0.8s linear infinite;
+}
+
+@keyframes qh-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qh-corner-button.is-spinning svg,
+  .qh-photo {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Immersive: Home has no view header on desktop. Phones keep it, since it holds the sidebar toggles there. */
+
+body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-header {
+  display: none;
+}
+
+/* Accessible names for icon-only controls, without hover tooltips. */
+
+.qh-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Narrow panes and phones */
+
+@container (max-width: 560px) {
+  .qh-page {
+    gap: 14px;
+    padding: 36px 16px 64px;
+  }
+
+  .qh-time {
+    font-size: 60px;
+  }
+
+  .qh-brand {
+    font-size: 32px;
+  }
+
+  .qh-bar {
+    gap: 8px;
+  }
+
+  .qh-bar {
+    flex-wrap: wrap;
+  }
+
+  .qh-search {
+    flex-basis: 100%;
+  }
+
+  .qh-search,
+  .qh-root .qh-pill-button {
+    height: 46px;
+  }
+
+  .qh-create {
+    flex: 1;
+  }
+
+  .qh-create > .qh-today,
+  .qh-split {
+    flex: 1;
+  }
+
+  .qh-root .qh-split .qh-new,
+  .qh-root .qh-today {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .qh-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Settings */
+
+.qh-setting-action-icon {
+  display: inline-flex;
+  margin-right: 8px;
+  vertical-align: -3px;
+}
+
+.qh-setting-action-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.qh-setting-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.qh-setting-note {
+  padding: 4px 0 8px;
+}
+
+.qh-setting-status {
+  padding: 0 0 12px;
+  color: var(--text-warning);
+}
