@@ -23,6 +23,15 @@ export interface CustomCommand {
 export interface ModuleOptions { visible: boolean; limit: number }
 export const DEFAULT_MODULE_OPTIONS: ModuleOptions = { visible: true, limit: 3 };
 
+export interface HomePage {
+  id: string;
+  name: string;
+  moduleOptions: Record<string, ModuleOptions>;
+  /** Existing layouts show newly discovered modules; a new blank page opts in. */
+  defaultVisible: boolean;
+  showRecommendations: boolean;
+}
+
 export interface HomeSettings {
   openOnStartup: boolean;
   replaceNewTab: boolean;
@@ -44,13 +53,13 @@ export interface HomeSettings {
   actions: string[];
   hiddenActions: string[];
   commands: CustomCommand[];
-  /** Per-card visibility and item count. Keys are "recent", "bookmarks", or provider plugin IDs. */
-  moduleOptions: Record<string, ModuleOptions>;
+  tabsEnabled: boolean;
+  activePageId: string;
+  pages: HomePage[];
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
   captureTarget: "daily" | "inbox";
   captureInboxPath: string;
-  showRecommendations: boolean;
   hiddenRecommendations: string[];
 }
 
@@ -73,11 +82,12 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   actions: [...BUILTIN_ACTIONS],
   hiddenActions: [],
   commands: [],
-  moduleOptions: {},
+  tabsEnabled: false,
+  activePageId: "home",
+  pages: [{ id: "home", name: "", moduleOptions: {}, defaultVisible: true, showRecommendations: true }],
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
-  showRecommendations: true,
   hiddenRecommendations: [],
 };
 
@@ -103,8 +113,29 @@ function photo(value: unknown): Photo | null {
   };
 }
 
-export function moduleOptions(settings: HomeSettings, id: string): ModuleOptions {
-  return settings.moduleOptions[id] ?? DEFAULT_MODULE_OPTIONS;
+export function currentPage(settings: HomeSettings, pageId?: string): HomePage {
+  const id = pageId ?? (settings.tabsEnabled ? settings.activePageId : settings.pages[0].id);
+  return settings.pages.find((page) => page.id === id) ?? settings.pages[0];
+}
+
+export function moduleOptions(settings: HomeSettings, id: string, pageId?: string): ModuleOptions {
+  const page = currentPage(settings, pageId);
+  return Object.hasOwn(page.moduleOptions, id) ? page.moduleOptions[id] : { ...DEFAULT_MODULE_OPTIONS, visible: page.defaultVisible };
+}
+
+/** Migrate the single-page layout only when there are no usable saved pages. */
+function normalizePages(raw: Record<string, unknown>, modules: Record<string, ModuleOptions>): HomePage[] {
+  const pages: HomePage[] = [];
+  if (Array.isArray(raw.pages)) for (const entry of raw.pages) {
+    if (!entry || typeof entry !== "object") continue;
+    const page = entry as Record<string, unknown>;
+    if (typeof page.id !== "string" || !page.id || pages.some((saved) => saved.id === page.id)) continue;
+    pages.push({ id: page.id, name: text(page.name).trim().slice(0, 80),
+      moduleOptions: normalizeModules(page.moduleOptions), defaultVisible: page.defaultVisible !== false,
+      showRecommendations: page.showRecommendations === true });
+  }
+  return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, defaultVisible: true,
+    showRecommendations: typeof raw.showRecommendations === "boolean" ? raw.showRecommendations : true }];
 }
 
 function normalizeModules(value: unknown): Record<string, ModuleOptions> {
@@ -139,6 +170,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     : [];
   const modules = normalizeModules(raw.moduleOptions);
   if (!modules.recent && raw.showRecent === false) modules.recent = { visible: false, limit: 3 };
+  const pages = normalizePages(raw, modules);
   return {
     openOnStartup: typeof raw.openOnStartup === "boolean" ? raw.openOnStartup : defaults.openOnStartup,
     replaceNewTab: typeof raw.replaceNewTab === "boolean" ? raw.replaceNewTab : defaults.replaceNewTab,
@@ -156,11 +188,12 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     actions: [...new Set(actions)],
     hiddenActions: strings(raw.hiddenActions),
     commands,
-    moduleOptions: modules,
+    tabsEnabled: raw.tabsEnabled === true,
+    activePageId: pages.some((page) => page.id === raw.activePageId) ? raw.activePageId as string : pages[0].id,
+    pages,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
-    showRecommendations: typeof raw.showRecommendations === "boolean" ? raw.showRecommendations : defaults.showRecommendations,
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };
 }

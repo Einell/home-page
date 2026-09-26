@@ -7,7 +7,10 @@ import {
 } from "./ecosystem";
 import { greeting, relativeTime, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { moduleOptions, type HomeSettings } from "./settings";
+import { currentPage, moduleOptions, type HomeSettings } from "./settings";
+import { addPage } from "./pages";
+import { NewPageModal } from "./page-dialogs";
+import { connectionSnapshot, connectionsChanged, connectionState } from "./connections";
 import { HOME_CHANGED_EVENT, findHomeProviders, type HomeAction, type HomeItem, type HomeProvider, type HomeSection } from "./protocol/qiaomu-home";
 import { SEARCHABLE, noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
 import { loadActions, loadSections, searchProvider, type SourceResult } from "./sources";
@@ -67,6 +70,11 @@ export class HomeView extends ItemView {
   private clearEl!: HTMLElement;
   private resultsEl!: HTMLElement;
   private gridEl!: HTMLElement;
+  private tabsEl!: HTMLElement;
+  private activePageId = "";
+  private tabsSignature = "";
+  private readonly pageInstance = `qh-pages-${crypto.randomUUID()}`;
+  private connections: unknown[] = [];
 
   private rows: ResultRow[] = [];
   private activeRow = 0;
@@ -96,6 +104,7 @@ export class HomeView extends ItemView {
     this.pageEl = root.createDiv({ cls: "qh-page" });
     this.headEl = this.pageEl.createDiv({ cls: "qh-head" });
     this.buildSearch(this.pageEl.createDiv({ cls: "qh-bar" }));
+    this.tabsEl = this.pageEl.createDiv({ cls: "qh-pages" });
     this.gridEl = this.pageEl.createDiv({ cls: "qh-grid" });
     this.buildCorner(root.createDiv({ cls: "qh-corner" }));
 
@@ -109,6 +118,15 @@ export class HomeView extends ItemView {
       this.closeResults();
     });
     this.registerInterval(window.setInterval(() => this.tick(), 1000));
+    this.connections = connectionSnapshot(this.app);
+    this.registerInterval(window.setInterval(() => {
+      if (!this.contentEl.isConnected) return;
+      const next = connectionSnapshot(this.app);
+      if (!connectionsChanged(this.connections, next)) return;
+      this.connections = next;
+      this.refreshSoon();
+      if (this.inputEl.value.trim() && this.inputEl.getAttr("aria-expanded") === "true") this.onQuery();
+    }, 1500));
 
     this.renderHead();
     this.refreshContent();
@@ -478,8 +496,60 @@ export class HomeView extends ItemView {
 
   // Continue area ----------------------------------------------------------
 
+  private renderPages(): void {
+    const settings = this.plugin.settings;
+    const page = currentPage(settings);
+    if (page.id !== this.activePageId) {
+      this.activePageId = page.id;
+      // Invalidate the former page immediately: slower sources must not flash through.
+      this.gridEl.empty();
+    }
+    const signature = JSON.stringify([settings.tabsEnabled, page.id, settings.pages.map((item) => [item.id, item.name])]);
+    if (signature === this.tabsSignature) return;
+    this.tabsSignature = signature;
+    this.tabsEl.empty();
+    this.tabsEl.toggleClass("is-off", !settings.tabsEnabled);
+    if (!settings.tabsEnabled) return;
+    const label = this.tabsEl.createSpan({ cls: "qh-sr-only", text: t("pages.label") });
+    label.id = `${this.pageInstance}-label`;
+    const list = this.tabsEl.createDiv({ cls: "qh-page-tabs", attr: { role: "tablist", "aria-labelledby": label.id } });
+    const select = (id: string, focus: boolean) => {
+      if (id === settings.activePageId) return;
+      settings.activePageId = id;
+      this.plugin.eachView((view) => view.refreshContent());
+      if (focus) this.tabsEl.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
+      void this.plugin.saveSettings({ rerender: false });
+    };
+    settings.pages.forEach((item, index) => {
+      const selected = item.id === page.id;
+      const button = list.createEl("button", { cls: "qh-page-tab", text: item.name || t("pages.default"),
+        attr: { role: "tab", "aria-selected": String(selected), "aria-controls": `${this.pageInstance}-panel` } });
+      button.id = `${this.pageInstance}-tab-${index}`;
+      button.tabIndex = selected ? 0 : -1;
+      button.addEventListener("click", () => select(item.id, true));
+      button.addEventListener("keydown", (event) => {
+        let next: number;
+        if (event.key === "ArrowRight") next = (index + 1) % settings.pages.length;
+        else if (event.key === "ArrowLeft") next = (index - 1 + settings.pages.length) % settings.pages.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = settings.pages.length - 1;
+        else return;
+        event.preventDefault();
+        select(settings.pages[next].id, true);
+      });
+    });
+    const add = this.tabsEl.createEl("button", { cls: "qh-icon-button qh-page-add" });
+    setIcon(add, "plus"); hiddenLabel(add, t("pages.add"));
+    add.addEventListener("click", () => new NewPageModal(this.app, async (name) => {
+      const created = addPage(settings, name);
+      await this.plugin.saveSettings();
+      this.plugin.openSettings(created.id);
+    }).open());
+  }
+
   private refreshContent(): void {
     if (!this.gridEl) return;
+    this.renderPages();
     this.renderCreate();
     const generation = ++this.sectionsGeneration;
     const providers = sortedProviders(findHomeProviders(this.app))
@@ -489,13 +559,20 @@ export class HomeView extends ItemView {
     // Build the new grid off-screen and swap it in once, so refreshes do not flicker.
     // The first render swaps immediately so local cards show without waiting for slower sources.
     const next = this.contentEl.createDiv({ cls: "qh-grid" });
+    next.id = `${this.pageInstance}-panel`;
+    if (this.plugin.settings.tabsEnabled) {
+      next.setAttr("role", "tabpanel");
+      next.setAttr("aria-labelledby", `${this.pageInstance}-tab-${this.plugin.settings.pages.indexOf(currentPage(this.plugin.settings))}`);
+      next.tabIndex = 0;
+    }
     next.detach();
     const first = !grid.hasChildNodes();
 
     if (moduleOptions(this.plugin.settings, "recent").visible) this.renderRecent(next);
+    let bookmarksReady: Promise<void> = Promise.resolve();
     if (moduleOptions(this.plugin.settings, "bookmarks").visible) {
       const bookmarksSlot = next.createDiv({ cls: "qh-slot" });
-      void this.renderBookmarks(bookmarksSlot, generation);
+      bookmarksReady = this.renderBookmarks(bookmarksSlot, generation);
     }
     const slots = providers.map(([id]) => ({ id, slot: next.createDiv({ cls: "qh-slot" }) }));
     for (const plugin of KNOWN_PLUGINS) {
@@ -505,12 +582,19 @@ export class HomeView extends ItemView {
     this.renderRecommendations(next);
 
     if (first) { grid.replaceWith(next); this.gridEl = next; }
-    void Promise.all(providers.map(async ([id, provider], index) => {
+    void Promise.all([bookmarksReady, ...providers.map(async ([id, provider], index) => {
       const result = await loadSections(provider);
       if (generation !== this.sectionsGeneration) return;
       this.fillSlot(slots[index].slot, id, result);
-    })).then(() => {
-      if (generation !== this.sectionsGeneration || first) return;
+    })]).then(() => {
+      if (generation !== this.sectionsGeneration) return;
+      if (this.plugin.settings.tabsEnabled && !next.querySelector(".qh-card")) {
+        const empty = next.createDiv({ cls: "qh-page-empty" });
+        empty.createDiv({ text: t("pages.empty") });
+        const configure = empty.createEl("button", { cls: "qh-pill", text: t("pages.configure") });
+        configure.addEventListener("click", () => this.plugin.openSettings(currentPage(this.plugin.settings).id));
+      }
+      if (first) return;
       grid.replaceWith(next);
       this.gridEl = next;
     });
@@ -620,7 +704,7 @@ export class HomeView extends ItemView {
     }
   }
 
-  /** An enabled Qiaomu plugin whose installed version predates the Home protocol: offer to open it. */
+  /** Missing/unsupported integration is not evidence that the installed release is outdated. */
   private renderLegacy(parent: HTMLElement, id: string): void {
     const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
     if (!known || !commandExists(this.app, known.openCommand)) return;
@@ -629,12 +713,13 @@ export class HomeView extends ItemView {
     setIcon(head.createSpan({ cls: "qh-card-icon" }), known.icon);
     head.createSpan({ cls: "qh-card-title", text: localized(known.name) });
     this.actionButton(head, { id: "open", label: t("legacy.open"), icon: "arrow-up-right", run: () => { runCommand(this.app, known.openCommand); } }, "qh-card-more", true);
-    card.createDiv({ cls: "qh-card-empty", text: t("legacy.update") });
+    this.actionButton(head, { id: "retry", label: t("legacy.retry"), icon: "refresh-cw", run: () => this.refreshContent() }, "qh-card-more", false);
+    card.createDiv({ cls: "qh-card-empty", text: t(connectionState(this.app, id) === "incompatible" ? "legacy.incompatible" : "legacy.unavailable") });
   }
 
   private renderRecommendations(parent: HTMLElement): void {
     const settings = this.plugin.settings;
-    if (!settings.showRecommendations) return;
+    if (!currentPage(settings).showRecommendations) return;
     const missing = KNOWN_PLUGINS
       .map((plugin) => ({ plugin, state: installState(this.app, plugin.id) }))
       .filter(({ plugin, state }) => state !== "enabled" && !settings.hiddenRecommendations.includes(plugin.id));
