@@ -1,4 +1,5 @@
-import { Plugin, type WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { renameShortcutTargets } from "./shortcuts";
 import { t } from "./i18n";
 import { DEFAULT_SETTINGS, normalizeSettings, type HomeSettings } from "./settings";
 import { HomeSettingTab } from "./settings-tab";
@@ -19,6 +20,9 @@ export default class QiaomuHomePlugin extends Plugin {
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
     this.wallpaper = new WallpaperService(this);
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      if (renameShortcutTargets(this.settings, oldPath, file.path)) void this.saveSettings().catch(() => new Notice(t("layout.saveFailed")));
+    }));
     this.registerView(HOME_VIEW_TYPE, (leaf) => new HomeView(leaf, this));
 
     this.addRibbonIcon("house", t("ribbon.open"), () => void this.openHome());

@@ -1,3 +1,5 @@
+import { editShortcutGroup, MoveShortcutModal, renderShortcutGroup } from "./shortcut-ui";
+import { shortcutModuleId } from "./shortcuts";
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import { builtinActions, createNamedNote, newNote, type CreateAction } from "./actions";
 import { askAgent, canAsk } from "./agent-bridge";
@@ -518,6 +520,8 @@ export class HomeView extends ItemView {
     }).open();
   }
 
+  private shortcutDragging = false;
+
   private saveLayout(): void {
     void this.plugin.saveSettings().catch((error: unknown) => {
       new Notice(t("layout.saveFailed"));
@@ -572,7 +576,12 @@ export class HomeView extends ItemView {
     setIcon(menuButton, "ellipsis"); hiddenLabel(menuButton, t("layout.menu"));
     menuButton.addEventListener("click", (event) => {
       const menu = new Menu();
-      if (id !== "recommendations") {
+      if (id.startsWith("shortcut:")) {
+        const groupId = id.slice("shortcut:".length);
+        menu.addItem((item) => item.setTitle(t("shortcut.renameGroup")).setIcon("pencil").onClick(() => editShortcutGroup(this.plugin, pageId, groupId)));
+        menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(this.plugin, pageId, groupId).open()));
+        menu.addSeparator();
+      } else if (id !== "recommendations") {
         menu.addItem((item) => item.setTitle(t("layout.count")).setIcon("list-ordered").onClick(() => new ModuleOptionsModal(this.plugin, pageId, id, name).open()));
         menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveModuleModal(this.plugin, pageId, id).open()));
         menu.addSeparator();
@@ -603,7 +612,8 @@ export class HomeView extends ItemView {
   }
 
   private cancelDrag(): void {
-    if (!this.dragging) return;
+    if (!this.dragging && !this.shortcutDragging) return;
+    this.shortcutDragging = false;
     this.dragging = null;
     this.contentEl.querySelectorAll(".qh-dragging, .qh-drop-target").forEach((el) => el.removeClass("qh-dragging", "qh-drop-target"));
     this.refreshContent();
@@ -710,7 +720,7 @@ export class HomeView extends ItemView {
   }
 
   private refreshContent(): void {
-    if (!this.gridEl || this.dragging) return;
+    if (!this.gridEl || this.dragging || this.shortcutDragging) return;
     this.renderPages();
     this.renderCreate();
     const generation = ++this.sectionsGeneration;
@@ -749,6 +759,9 @@ export class HomeView extends ItemView {
         else this.renderUnavailable(next, item);
       }
       this.renderRecommendations(next);
+      for (const group of page.shortcutGroups) {
+        if (moduleOptions(this.plugin.settings, shortcutModuleId(group.id), page.id).visible) renderShortcutGroup(next, this.plugin, page.id, group, this.editing, (active) => { this.shortcutDragging = active; });
+      }
       const cards = Array.from(next.querySelectorAll<HTMLElement>(".qh-card"));
       const ids = cards.map((card) => card.dataset.module!);
       const ordered = orderModules(page, ids);

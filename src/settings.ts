@@ -1,3 +1,4 @@
+import { normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
 export type WallpaperRotation = "daily" | "open" | "fixed";
 export type Headline = "clock" | "brand" | "vault";
@@ -28,6 +29,7 @@ export interface HomePage {
   name: string;
   moduleOptions: Record<string, ModuleOptions>;
   moduleOrder: string[];
+  shortcutGroups: ShortcutGroup[];
   /** Existing layouts show newly discovered modules; a new blank page opts in. */
   defaultVisible: boolean;
   showRecommendations: boolean;
@@ -85,7 +87,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   commands: [],
   tabsEnabled: false,
   activePageId: "home",
-  pages: [{ id: "home", name: "", moduleOptions: {}, moduleOrder: [], defaultVisible: true, showRecommendations: true }],
+  pages: [{ id: "home", name: "", moduleOptions: {}, moduleOrder: [], shortcutGroups: [], defaultVisible: true, showRecommendations: true }],
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
@@ -144,10 +146,11 @@ function normalizePages(raw: Record<string, unknown>, modules: Record<string, Mo
     const page = entry as Record<string, unknown>;
     if (typeof page.id !== "string" || !page.id || pages.some((saved) => saved.id === page.id)) continue;
     pages.push({ id: page.id, name: text(page.name).trim().slice(0, 80),
+      shortcutGroups: normalizeShortcutGroups(page.shortcutGroups),
       moduleOptions: normalizeModules(page.moduleOptions), moduleOrder: [...new Set(strings(page.moduleOrder))], defaultVisible: page.defaultVisible !== false,
       showRecommendations: page.showRecommendations === true });
   }
-  return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, moduleOrder: [], defaultVisible: true,
+  return pages.length ? pages : [{ id: "home", name: "", moduleOptions: modules, moduleOrder: [], shortcutGroups: [], defaultVisible: true,
     showRecommendations: typeof raw.showRecommendations === "boolean" ? raw.showRecommendations : true }];
 }
 

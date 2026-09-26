@@ -2,7 +2,7 @@ import { type HomePage, type HomeSettings } from "./settings";
 
 export function addPage(settings: HomeSettings, name: string): HomePage {
   const page: HomePage = { id: crypto.randomUUID(), name: name.trim().slice(0, 80),
-    moduleOptions: {}, moduleOrder: [], defaultVisible: false, showRecommendations: false };
+    moduleOptions: {}, moduleOrder: [], shortcutGroups: [], defaultVisible: false, showRecommendations: false };
   settings.pages.push(page);
   settings.activePageId = page.id;
   settings.tabsEnabled = true;

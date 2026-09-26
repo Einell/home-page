@@ -1,0 +1,241 @@
+import { FuzzySuggestModal, Menu, Modal, Notice, Setting, TFile, TFolder, setIcon, type TAbstractFile } from "obsidian";
+import type QiaomuHomePlugin from "./main";
+import { isChinese, t } from "./i18n";
+import { NewPageModal } from "./page-dialogs";
+import { defaultShortcutIcon, moveShortcutGroup, reorderShortcut, SHORTCUT_ICONS, shortcutModuleId, webTarget, type Shortcut, type ShortcutGroup, type ShortcutKind } from "./shortcuts";
+
+const L = (zh: string, en: string): string => isChinese() ? zh : en;
+const groupName = (group: ShortcutGroup): string => group.name || L("常用入口", "Shortcuts");
+function label(button: HTMLElement, text: string): void { button.createSpan({ cls: "qh-sr-only", text }); }
+function findGroup(plugin: QiaomuHomePlugin, pageId: string, groupId: string): ShortcutGroup | undefined {
+  return plugin.settings.pages.find((page) => page.id === pageId)?.shortcutGroups.find((group) => group.id === groupId);
+}
+function save(plugin: QiaomuHomePlugin): void { void plugin.saveSettings().catch(() => new Notice(t("layout.saveFailed"))); }
+
+class TargetPicker extends FuzzySuggestModal<TAbstractFile> {
+  constructor(private plugin: QiaomuHomePlugin, private kind: ShortcutKind, private choose: (file: TAbstractFile) => void) {
+    super(plugin.app); this.setPlaceholder(L("搜索文件或文件夹", "Find a file or folder"));
+  }
+  getItems(): TAbstractFile[] { return this.plugin.app.vault.getAllLoadedFiles().filter((file) => this.kind === "folder" ? file instanceof TFolder : file instanceof TFile); }
+  getItemText(file: TAbstractFile): string { return file.path || "/"; }
+  onChooseItem(file: TAbstractFile): void { this.choose(file); }
+}
+
+export class ShortcutEditorModal extends Modal {
+  constructor(private plugin: QiaomuHomePlugin, private pageId: string, private groupId?: string, private itemId?: string) {
+    super(plugin.app); plugin.register(() => this.close());
+  }
+  onOpen(): void {
+    this.modalEl.addClass("qh-shortcut-modal");
+    this.setTitle(this.itemId ? L("编辑快捷入口", "Edit shortcut") : L("添加快捷入口", "Add shortcut"));
+    const group = this.groupId ? findGroup(this.plugin, this.pageId, this.groupId) : undefined;
+    const original = group?.items.find((item) => item.id === this.itemId);
+    if ((this.groupId && !group) || (this.itemId && !original)) { this.close(); return; }
+    let kind: ShortcutKind = original?.kind ?? "file", target = original?.target ?? "", name = original?.name ?? "", icon = original?.icon ?? defaultShortcutIcon(kind);
+    let title = L("常用入口", "Shortcuts");
+    if (!this.groupId) new Setting(this.contentEl).setName(L("分组名称", "Group name")).addText((input) => input.setValue(title).onChange((value) => { title = value; }));
+    const targetSlot = this.contentEl.createDiv();
+    const targetSetting = new Setting(targetSlot);
+    const targetField = targetSetting.controlEl;
+    const renderTarget = () => {
+      targetField.empty();
+      targetSetting.setName(kind === "url" ? L("网址", "Website") : L("目标", "Target"));
+      if (kind === "url") targetSetting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
+      else targetSetting.addButton((button) => button.setButtonText(target || L("选择…", "Choose…")).onClick(() => {
+        new TargetPicker(this.plugin, kind, (file) => { target = file.path; renderTarget(); }).open();
+      }));
+    };
+    const typeSetting = new Setting(this.contentEl).setName(L("类型", "Type")).addDropdown((dropdown) => dropdown.addOptions({ file: L("笔记 / 文件", "Note / file"), folder: L("文件夹", "Folder"), url: L("网址", "Website") }).setValue(kind).onChange((value) => {
+      const wasDefault = icon === defaultShortcutIcon(kind);
+      kind = value as ShortcutKind; target = "";
+      if (wasDefault) icon = defaultShortcutIcon(kind);
+      renderTarget(); renderIcons();
+    }));
+    targetSlot.before(typeSetting.settingEl);
+    renderTarget();
+    new Setting(this.contentEl).setName(L("显示名称", "Display name")).addText((input) => input.setValue(name).setPlaceholder(L("留空使用文件名或域名", "Use file name or domain")).onChange((value) => { name = value; }));
+    this.contentEl.createDiv({ text: L("图标", "Icon"), cls: "qh-shortcut-icon-label" });
+    const icons = this.contentEl.createDiv({ cls: "qh-shortcut-icons" });
+    const iconNames = ["文件", "文件夹", "网页", "链接", "阅读", "星标", "喜欢", "工作", "写作", "代码", "学习", "主页", "日历", "音乐", "视频", "灵感"];
+    const renderIcons = () => {
+      icons.empty();
+      SHORTCUT_ICONS.forEach((value, index) => {
+        const button = icons.createEl("button", { cls: "qh-icon-choice", attr: { "aria-pressed": String(icon === value) } });
+        setIcon(button, value); label(button, isChinese() ? iconNames[index] : value);
+        button.addEventListener("click", () => { icon = value; renderIcons(); });
+      });
+    };
+    renderIcons();
+    const error = this.contentEl.createDiv({ cls: "qh-shortcut-error", attr: { role: "alert" } });
+    new Setting(this.contentEl).addButton((button) => button.setButtonText(L("保存", "Save")).setCta().onClick(async () => {
+      const page = this.plugin.settings.pages.find((entry) => entry.id === this.pageId);
+      let current = this.groupId ? findGroup(this.plugin, this.pageId, this.groupId) : undefined;
+      if (!page || (this.groupId && !current) || (this.itemId && !current?.items.some((item) => item.id === this.itemId))) { this.close(); return; }
+      const url = kind === "url" ? webTarget(target) : null;
+      const file = kind !== "url" ? this.app.vault.getAbstractFileByPath(target) : null;
+      if (!target || (kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
+        error.setText(kind === "url" ? L("请输入完整的 http 或 https 网址。", "Enter a full http or https URL.") : L("目标不存在，请重新选择。", "Target missing. Choose it again.")); return;
+      }
+      const before = structuredClone(page);
+      if (!current) {
+        current = { id: crypto.randomUUID(), name: title.trim().slice(0, 80) || L("常用入口", "Shortcuts"), items: [] };
+        page.shortcutGroups.push(current);
+        if (page.moduleOrder.length) page.moduleOrder.push(shortcutModuleId(current.id));
+      }
+      const item: Shortcut = { id: this.itemId ?? crypto.randomUUID(), kind, target: url ?? target, name: name.trim().slice(0, 120), icon };
+      const index = current.items.findIndex((entry) => entry.id === item.id);
+      if (index === -1) current.items.push(item); else current.items[index] = item;
+      page.moduleOptions[shortcutModuleId(current.id)] = { visible: true, limit: 3 };
+      button.setDisabled(true);
+      try { await this.plugin.saveSettings(); this.close(); }
+      catch {
+        // Revert this item only, preserving unrelated edits made while saving.
+        const at = current.items.indexOf(item);
+        if (at >= 0) {
+          const oldGroup = before.shortcutGroups.find((entry) => entry.id === current.id);
+          const oldItem = oldGroup?.items.find((entry) => entry.id === item.id);
+          if (oldItem) current.items[at] = oldItem;
+          else current.items.splice(at, 1);
+          if (!oldGroup && !current.items.length) {
+            page.shortcutGroups = page.shortcutGroups.filter((entry) => entry !== current);
+            const key = shortcutModuleId(current.id);
+            page.moduleOrder = page.moduleOrder.filter((entry) => entry !== key);
+            delete page.moduleOptions[key];
+          }
+        }
+        error.setText(t("layout.saveFailed")); button.setDisabled(false);
+      }
+    }));
+  }
+  onClose(): void { this.contentEl.empty(); }
+}
+
+export function shortcutName(item: Shortcut): string {
+  return item.name || (item.kind === "url" ? new URL(item.target).hostname : item.target.split("/").pop()?.replace(/\.md$/, "") || "/");
+}
+async function openShortcut(plugin: QiaomuHomePlugin, item: Shortcut, newTab: boolean): Promise<void> {
+  if (item.kind === "url") { const url = webTarget(item.target); if (url) window.open(url, "_blank", "noopener,noreferrer"); return; }
+  const file = plugin.app.vault.getAbstractFileByPath(item.target);
+  if (item.kind === "file" && file instanceof TFile) { await plugin.app.workspace.getLeaf(newTab ? "tab" : false).openFile(file); return; }
+  if (item.kind === "folder" && file instanceof TFolder) {
+    let leaf = plugin.app.workspace.getLeavesOfType("file-explorer")[0];
+    if (!leaf) {
+      const left = plugin.app.workspace.getLeftLeaf(false);
+      if (!left) throw new Error("No file explorer leaf");
+      await left.setViewState({ type: "file-explorer", active: true }); leaf = left;
+    }
+    await plugin.app.workspace.revealLeaf(leaf);
+    const view = leaf.view as unknown as {
+      revealInFolder?: (file: TAbstractFile) => Promise<void> | void;
+      fileItems?: Record<string, { setCollapsed?(collapsed: boolean): Promise<void> | void }>;
+    };
+    if (!view.revealInFolder) throw new Error("File explorer unavailable");
+    await view.revealInFolder(file);
+    await view.fileItems?.[file.path]?.setCollapsed?.(false);
+    return;
+  }
+  new Notice(L("目标已移除，可在快捷入口菜单中重新选择。", "Target missing. Edit the shortcut to choose another."));
+}
+
+export class MoveShortcutModal extends Modal {
+  constructor(private plugin: QiaomuHomePlugin, private pageId: string, private groupId: string, private itemId?: string) { super(plugin.app); }
+  onOpen(): void {
+    this.setTitle(this.itemId ? L("移到其他分组", "Move to group") : t("layout.move"));
+    let count = 0;
+    for (const page of this.plugin.settings.pages) {
+      if (!this.itemId) {
+        if (page.id === this.pageId) continue;
+        count++;
+        const exists = page.shortcutGroups.some((group) => group.id === this.groupId);
+        new Setting(this.contentEl).setName(page.name || t("pages.default")).addButton((button) => button.setButtonText(t(exists ? "library.added" : "layout.move")).setDisabled(exists).onClick(() => {
+          if (moveShortcutGroup(this.plugin.settings, this.pageId, page.id, this.groupId)) save(this.plugin);
+          this.close();
+        }));
+      } else for (const group of page.shortcutGroups) {
+        if (page.id === this.pageId && group.id === this.groupId) continue;
+        count++;
+        new Setting(this.contentEl).setName(`${page.name || t("pages.default")} / ${groupName(group)}`).addButton((button) => button.setButtonText(t("layout.move")).onClick(() => {
+          const source = findGroup(this.plugin, this.pageId, this.groupId), destination = findGroup(this.plugin, page.id, group.id);
+          const item = source?.items.find((entry) => entry.id === this.itemId);
+          if (source && destination && item) {
+            source.items = source.items.filter((entry) => entry.id !== item.id);
+            destination.items.push({ ...item, id: crypto.randomUUID() });
+            page.moduleOptions[shortcutModuleId(destination.id)] = { visible: true, limit: 3 };
+            save(this.plugin);
+          }
+          this.close();
+        }));
+      }
+    }
+    if (!count) this.contentEl.createEl("p", { text: L("请先创建另一个页签或快捷方式分组。", "Create another page or shortcut group first.") });
+  }
+  onClose(): void { this.contentEl.empty(); }
+}
+
+export function editShortcutGroup(plugin: QiaomuHomePlugin, pageId: string, id: string): void {
+  const group = findGroup(plugin, pageId, id);
+  if (!group) return;
+  new NewPageModal(plugin.app, async (name) => {
+    const current = findGroup(plugin, pageId, id);
+    if (current) { current.name = name; await plugin.saveSettings(); }
+  }, groupName(group), L("重命名分组", "Rename group")).open();
+}
+
+export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugin, pageId: string, group: ShortcutGroup, editing: boolean, dragState: (active: boolean) => void): void {
+  const card = parent.createDiv({ cls: "qh-card qh-shortcut-card", attr: { "data-module": shortcutModuleId(group.id) } });
+  const head = card.createDiv({ cls: "qh-card-head" });
+  setIcon(head.createSpan({ cls: "qh-card-icon" }), "link");
+  head.createSpan({ cls: "qh-card-title", text: groupName(group) });
+  const add = head.createEl("button", { cls: "qh-icon-button" }); setIcon(add, "plus"); label(add, L("添加快捷入口", "Add shortcut"));
+  add.addEventListener("click", () => new ShortcutEditorModal(plugin, pageId, group.id).open());
+  const grid = card.createDiv({ cls: "qh-shortcuts" });
+  let dragged: string | null = null;
+  for (const item of group.items) {
+    const cell = grid.createDiv({ cls: "qh-shortcut-cell", attr: { "data-shortcut": item.id } });
+    const button = cell.createEl("button", { cls: "qh-shortcut-link" });
+    setIcon(button.createSpan({ cls: "qh-shortcut-icon" }), item.icon);
+    button.createSpan({ cls: "qh-shortcut-name", text: shortcutName(item) });
+    if (item.kind !== "url" && !plugin.app.vault.getAbstractFileByPath(item.target)) {
+      cell.addClass("is-missing"); button.createSpan({ cls: "qh-shortcut-status", text: L("目标已移除", "Target missing") });
+    }
+    const open = (newTab: boolean) => { void openShortcut(plugin, item, newTab).catch(() => new Notice(L("无法打开目标，请检查文件列表是否启用或重新选择目标。", "Unable to open. Enable the file explorer or choose the target again."))); };
+    button.addEventListener("click", (event) => open(event.metaKey || event.ctrlKey));
+    button.addEventListener("auxclick", (event) => { if (event.button === 1) open(true); });
+    const menu = (event: MouseEvent, anchor: HTMLElement) => {
+      event.preventDefault(); event.stopPropagation();
+      const menu = new Menu();
+      if (item.kind === "file") menu.addItem((entry) => entry.setTitle(L("在新标签页打开", "Open in new tab")).setIcon("external-link").onClick(() => open(true)));
+      menu.addItem((entry) => entry.setTitle(L("编辑", "Edit")).setIcon("pencil").onClick(() => new ShortcutEditorModal(plugin, pageId, group.id, item.id).open()));
+      menu.addItem((entry) => entry.setTitle(L("移到其他分组", "Move to group")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(plugin, pageId, group.id, item.id).open()));
+      const index = group.items.indexOf(item);
+      for (const delta of [-1, 1]) menu.addItem((entry) => entry.setTitle(t(delta < 0 ? "layout.earlier" : "layout.later")).setIcon(delta < 0 ? "arrow-left" : "arrow-right").setDisabled(index + delta < 0 || index + delta >= group.items.length).onClick(() => {
+        const current = findGroup(plugin, pageId, group.id);
+        const at = current?.items.findIndex((entry) => entry.id === item.id) ?? -1;
+        if (current && at >= 0 && current.items[at + delta] && reorderShortcut(current, item.id, current.items[at + delta].id, delta > 0)) save(plugin);
+      }));
+      menu.addItem((entry) => entry.setTitle(L("移除入口", "Remove shortcut")).setIcon("minus-circle").onClick(() => {
+        const current = findGroup(plugin, pageId, group.id);
+        if (current) { current.items = current.items.filter((entry) => entry.id !== item.id); save(plugin); }
+      }));
+      const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom });
+    };
+    button.addEventListener("contextmenu", (event) => menu(event, button));
+    if (editing) {
+      const more = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-more" }); setIcon(more, "ellipsis"); label(more, L("入口选项", "Shortcut options"));
+      more.addEventListener("click", (event) => menu(event, more));
+      button.draggable = true;
+      button.addEventListener("dragstart", (event) => { event.stopPropagation(); dragged = item.id; event.dataTransfer?.setData("application/x-qiaomu-shortcut", item.id); dragState(true); });
+      cell.addEventListener("dragover", (event) => { if (dragged && dragged !== item.id) { event.preventDefault(); event.stopPropagation(); grid.querySelectorAll(".is-drag-target").forEach((el) => el.removeClass("is-drag-target")); cell.addClass("is-drag-target"); } });
+      cell.addEventListener("dragleave", () => cell.removeClass("is-drag-target"));
+      cell.addEventListener("drop", (event) => {
+        if (!dragged) return;
+        event.preventDefault(); event.stopPropagation();
+        const current = findGroup(plugin, pageId, group.id), rect = cell.getBoundingClientRect();
+        const changed = current && reorderShortcut(current, dragged, item.id, event.clientX > rect.left + rect.width / 2);
+        dragged = null; dragState(false); cell.removeClass("is-drag-target"); if (changed) save(plugin);
+      });
+      button.addEventListener("dragend", () => { dragged = null; dragState(false); grid.querySelectorAll(".is-drag-target").forEach((el) => el.removeClass("is-drag-target")); });
+    }
+  }
+  if (!group.items.length) grid.createEl("p", { cls: "qh-card-empty", text: L("点击＋添加笔记、文件夹或网址。", "Add notes, folders or websites with +.") });
+}
