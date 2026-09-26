@@ -1,8 +1,9 @@
 import { AbstractInputSuggest, FuzzySuggestModal, PluginSettingTab, SecretComponent, Setting, TFile, setIcon, type App } from "obsidian";
-import { listCommands } from "./ecosystem";
+import { KNOWN_PLUGINS, listCommands, localized, pluginName } from "./ecosystem";
 import { isChinese } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import type { Headline, WallpaperRotation, WallpaperSource } from "./settings";
+import { moduleOptions, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
+import { findHomeProviders } from "./protocol/qiaomu-home";
 import { collectActions } from "./view";
 import { isImagePath } from "./wallpaper/wallpaper";
 
@@ -164,9 +165,14 @@ export class HomeSettingTab extends PluginSettingTab {
           settings.captureInboxPath = value.trim(); await save(false);
         }));
     }
-    new Setting(containerEl)
-      .setName(L("最近笔记", "Recent notes"))
-      .addToggle((toggle) => toggle.setValue(settings.showRecent).onChange(async (value) => { settings.showRecent = value; await save(); }));
+    new Setting(containerEl).setName(L("主页模块", "Home cards")).setHeading();
+    this.renderModuleOption(containerEl, "recent", L("最近笔记", "Recent notes"));
+    this.renderModuleOption(containerEl, "bookmarks", L("常用书签", "Bookmarks"));
+    const ids = new Set([...KNOWN_PLUGINS.map((plugin) => plugin.id), ...findHomeProviders(this.app).map(([id]) => id)]);
+    for (const id of ids) {
+      const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
+      this.renderModuleOption(containerEl, id, known ? localized(known.name) : pluginName(this.app, id));
+    }
     new Setting(containerEl)
       .setName(L("推荐乔木插件", "Suggest Qiaomu plugins"))
       .setDesc(settings.hiddenRecommendations.length ? L(`已隐藏 ${settings.hiddenRecommendations.length} 个推荐。`, `${settings.hiddenRecommendations.length} hidden.`) : "")
@@ -191,6 +197,27 @@ export class HomeSettingTab extends PluginSettingTab {
         fragment.appendText(" · ");
         fragment.createEl("a", { text: "GitHub", href: REPO });
       }));
+  }
+
+  private renderModuleOption(containerEl: HTMLElement, id: string, name: string): void {
+    const settings = this.plugin.settings;
+    const current = moduleOptions(settings, id);
+    new Setting(containerEl)
+      .setName(name)
+      .addToggle((toggle) => toggle.setValue(current.visible).onChange(async (visible) => {
+        settings.moduleOptions[id] = { ...moduleOptions(settings, id), visible };
+        await this.plugin.saveSettings();
+      }))
+      .addDropdown((dropdown) => dropdown
+        .addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, index) => {
+          const n = index + 1;
+          return [String(n), L(`${n} 条`, `${n} items`)];
+        })))
+        .setValue(String(current.limit))
+        .onChange(async (value) => {
+          settings.moduleOptions[id] = { ...moduleOptions(settings, id), limit: Number(value) };
+          await this.plugin.saveSettings();
+        }));
   }
 
   private renderActions(containerEl: HTMLElement): void {

@@ -28,14 +28,6 @@ export async function todayPath(app: App): Promise<string> {
   return normalizePath(`${folder ? `${folder}/` : ""}${now().format(format)}.md`);
 }
 
-export async function todaySummary(app: App): Promise<{ file: TFile | null; characters: number }> {
-  const file = app.vault.getAbstractFileByPath(await todayPath(app));
-  if (!(file instanceof TFile)) return { file: null, characters: 0 };
-  const content = await app.vault.cachedRead(file);
-  const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-  return { file, characters: [...body.replace(/\s/g, "")].length };
-}
-
 async function ensureParent(app: App, path: string): Promise<void> {
   const parts = path.split("/").slice(0, -1);
   for (let i = 1; i <= parts.length; i++) {

@@ -402,21 +402,6 @@
   font-size: 13px;
 }
 
-.qh-today-row {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--qh-text);
-  text-align: left;
-  cursor: pointer;
-}
-
-.qh-today-row svg,
 .qh-bookmark svg {
   width: 16px;
   height: 16px;
@@ -443,11 +428,9 @@
   cursor: pointer;
 }
 
-.qh-bookmark:hover,
-.qh-today-row:hover { background: var(--qh-hover); }
+.qh-bookmark:hover { background: var(--qh-hover); }
 
-.qh-bookmark:focus-visible,
-.qh-today-row:focus-visible {
+.qh-bookmark:focus-visible {
   outline: 2px solid var(--qh-focus);
   outline-offset: 2px;
 }

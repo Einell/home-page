@@ -38,7 +38,7 @@ export function flattenBookmarks(items: unknown, limit = 8): HomeBookmark[] {
   return result;
 }
 
-export async function loadBookmarks(app: App): Promise<HomeBookmark[]> {
+export async function loadBookmarks(app: App, limit = 3): Promise<HomeBookmark[]> {
   const core = app as App & { internalPlugins?: { getPluginById?(id: string): { enabled?: boolean; instance?: unknown } | null } };
   const plugin = core.internalPlugins?.getPluginById?.("bookmarks");
   if (plugin?.enabled === false) return [];
@@ -46,6 +46,6 @@ export async function loadBookmarks(app: App): Promise<HomeBookmark[]> {
   if (!await app.vault.adapter.exists(path)) return [];
   try {
     const data: unknown = JSON.parse(await app.vault.adapter.read(path));
-    return flattenBookmarks((data as { items?: unknown } | null)?.items);
+    return flattenBookmarks((data as { items?: unknown } | null)?.items, limit);
   } catch { return []; }
 }

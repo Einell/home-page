@@ -20,6 +20,9 @@ export interface CustomCommand {
   icon: string;
 }
 
+export interface ModuleOptions { visible: boolean; limit: number }
+export const DEFAULT_MODULE_OPTIONS: ModuleOptions = { visible: true, limit: 3 };
+
 export interface HomeSettings {
   openOnStartup: boolean;
   replaceNewTab: boolean;
@@ -41,7 +44,8 @@ export interface HomeSettings {
   actions: string[];
   hiddenActions: string[];
   commands: CustomCommand[];
-  showRecent: boolean;
+  /** Per-card visibility and item count. Keys are "recent", "bookmarks", or provider plugin IDs. */
+  moduleOptions: Record<string, ModuleOptions>;
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
   captureTarget: "daily" | "inbox";
@@ -69,7 +73,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   actions: [...BUILTIN_ACTIONS],
   hiddenActions: [],
   commands: [],
-  showRecent: true,
+  moduleOptions: {},
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
@@ -99,6 +103,25 @@ function photo(value: unknown): Photo | null {
   };
 }
 
+export function moduleOptions(settings: HomeSettings, id: string): ModuleOptions {
+  return settings.moduleOptions[id] ?? DEFAULT_MODULE_OPTIONS;
+}
+
+function normalizeModules(value: unknown): Record<string, ModuleOptions> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const result: Record<string, ModuleOptions> = {};
+  for (const [id, raw] of Object.entries(value)) {
+    if (!id || id === "__proto__" || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const candidate = raw as Partial<ModuleOptions>;
+    result[id] = {
+      visible: typeof candidate.visible === "boolean" ? candidate.visible : true,
+      limit: typeof candidate.limit === "number" && Number.isFinite(candidate.limit)
+        ? Math.min(6, Math.max(1, Math.floor(candidate.limit))) : 3,
+    };
+  }
+  return result;
+}
+
 /** Validates saved data field by field; unknown or broken values fall back to defaults without touching the rest. */
 export function normalizeSettings(saved: unknown): HomeSettings {
   const raw = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
@@ -114,6 +137,8 @@ export function normalizeSettings(saved: unknown): HomeSettings {
         : [];
     })
     : [];
+  const modules = normalizeModules(raw.moduleOptions);
+  if (!modules.recent && raw.showRecent === false) modules.recent = { visible: false, limit: 3 };
   return {
     openOnStartup: typeof raw.openOnStartup === "boolean" ? raw.openOnStartup : defaults.openOnStartup,
     replaceNewTab: typeof raw.replaceNewTab === "boolean" ? raw.replaceNewTab : defaults.replaceNewTab,
@@ -131,7 +156,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     actions: [...new Set(actions)],
     hiddenActions: strings(raw.hiddenActions),
     commands,
-    showRecent: typeof raw.showRecent === "boolean" ? raw.showRecent : defaults.showRecent,
+    moduleOptions: modules,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
