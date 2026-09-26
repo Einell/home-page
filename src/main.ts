@@ -1,4 +1,5 @@
-import { Plugin, type WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { renameShortcutTargets } from "./shortcuts";
 import { t } from "./i18n";
 import { DEFAULT_SETTINGS, normalizeSettings, type HomeSettings } from "./settings";
 import { HomeSettingTab } from "./settings-tab";
@@ -12,12 +13,20 @@ export default class QiaomuHomePlugin extends Plugin {
   settings: HomeSettings = structuredClone(DEFAULT_SETTINGS);
   wallpaper!: WallpaperService;
   private homeSettingTab!: HomeSettingTab;
+  private saveQueue: Promise<void> = Promise.resolve();
   private claimTimer: number | null = null;
   private claiming = new WeakSet<WorkspaceLeaf>();
 
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
     this.wallpaper = new WallpaperService(this);
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      let todoRenamed = false;
+      if (this.settings.todoPath === oldPath || this.settings.todoPath.startsWith(`${oldPath}/`)) {
+        this.settings.todoPath = file.path + this.settings.todoPath.slice(oldPath.length); todoRenamed = true;
+      }
+      if (renameShortcutTargets(this.settings, oldPath, file.path) || todoRenamed) void this.saveSettings().catch(() => new Notice(t("layout.saveFailed")));
+    }));
     this.registerView(HOME_VIEW_TYPE, (leaf) => new HomeView(leaf, this));
 
     this.addRibbonIcon("house", t("ribbon.open"), () => void this.openHome());
@@ -52,13 +61,15 @@ export default class QiaomuHomePlugin extends Plugin {
   }
 
   async saveSettings(options: { rerender?: boolean } = {}): Promise<void> {
-    await this.saveData(this.settings);
+    const snapshot = structuredClone(this.settings);
+    const save = this.saveQueue.catch(() => {}).then(() => this.saveData(snapshot));
+    this.saveQueue = save;
+    await save;
     if (options.rerender !== false) this.eachView((view) => view.render());
   }
 
   /** Opens this plugin's page in Obsidian settings. */
-  openSettings(pageId?: string): void {
-    this.homeSettingTab.editPage(pageId);
+  openSettings(): void {
     const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): unknown } }).setting;
     setting?.open?.();
     setting?.openTabById?.(this.manifest.id);

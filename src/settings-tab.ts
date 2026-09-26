@@ -1,14 +1,11 @@
-import { AbstractInputSuggest, FuzzySuggestModal, PluginSettingTab, SecretComponent, Setting, TFile, setIcon, type App } from "obsidian";
-import { KNOWN_PLUGINS, listCommands, localized, pluginName } from "./ecosystem";
+import { AbstractInputSuggest, FuzzySuggestModal, PluginSettingTab, Notice, SecretComponent, Setting, TFile, setIcon, type App } from "obsidian";
+import { listCommands } from "./ecosystem";
 import { isChinese, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { currentPage, moduleOptions, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
-import { findHomeProviders } from "./protocol/qiaomu-home";
+import { currentPage, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
 import { collectActions } from "./view";
 import { isImagePath } from "./wallpaper/wallpaper";
 
-import { addPage, movePage, removePage } from "./pages";
-import { DeletePageModal, NewPageModal } from "./page-dialogs";
 
 const L = (zh: string, en: string): string => isChinese() ? zh : en;
 
@@ -54,24 +51,54 @@ function iconButton(parent: HTMLElement, icon: string, label: string, onClick: (
   button.addEventListener("click", onClick);
 }
 
+import { addPresetPage, removePage } from "./pages";
+import { NewPageModal, DeletePageModal } from "./page-dialogs";
+import { renderTodoPreferences } from "./todo-ui";
+
+type SettingsSection = "home" | "appearance" | "capture" | "about";
 export class HomeSettingTab extends PluginSettingTab {
-  private editingPageId?: string;
-  private scrollToPage = false;
-
-  editPage(id?: string): void {
-    this.editingPageId = id;
-    this.scrollToPage = Boolean(id);
-  }
+  private activeSection: SettingsSection = "home";
+  private readonly instance = `qh-settings-${crypto.randomUUID()}`;
   constructor(app: App, private plugin: QiaomuHomePlugin) { super(app, plugin); }
-
-  display(): void {
-    const { containerEl } = this;
-    const settings = this.plugin.settings;
-    const wall = settings.wallpaper;
-    const save = async (rerender = true) => { await this.plugin.saveSettings({ rerender }); };
-    containerEl.empty();
-    containerEl.addClass("qh-settings");
-
+  private async save(rerender = true): Promise<void> {
+    try { await this.plugin.saveSettings({rerender}); }
+    catch { new Notice(L("设置保存失败，请重试。", "Could not save settings. Try again.")); }
+  }
+  display(): void { this.renderSettings(); }
+  private renderSettings(): void {
+    const root=this.containerEl;
+    root.empty();root.addClass("qh-settings");
+    const header=root.createDiv({cls:"qh-settings-header"});
+    const identity=header.createDiv({cls:"qh-settings-identity"});
+    setIcon(identity.createSpan({attr:{"aria-hidden":"true"}}),"tree-deciduous");
+    new Setting(identity).setName(L("乔木 Home","Qiaomu Home")).setHeading();
+    const nav=header.createDiv({cls:"qh-settings-tabs",attr:{role:"tablist"}});
+    const navLabel=nav.createSpan({cls:"qh-sr-only",text:L("设置分类","Settings sections")});navLabel.id=`${this.instance}-label`;nav.setAttr("aria-labelledby",navLabel.id);
+    const sections: {id:SettingsSection; label:string}[]=[{id:"home",label:L("主页","Home")},{id:"appearance",label:L("外观","Appearance")},{id:"capture",label:L("记录","Capture")},{id:"about",label:L("关于","About")}];
+    const select=(id:SettingsSection)=>{this.activeSection=id;this.renderSettings();this.containerEl.querySelector<HTMLElement>('[role=tab][aria-selected=true]')?.focus();};
+    sections.forEach((section,index)=>{
+      const selected=section.id===this.activeSection;
+      const button=nav.createEl("button",{text:section.label,cls:"qh-settings-tab",attr:{type:"button",role:"tab","aria-selected":String(selected),"aria-controls":`${this.instance}-panel`,id:`${this.instance}-${section.id}`}});
+      button.tabIndex=selected?0:-1;
+      button.addEventListener("click",()=>select(section.id));
+      button.addEventListener("keydown",event=>{
+        let next:number;
+        if(event.key==="ArrowRight")next=(index+1)%sections.length;else if(event.key==="ArrowLeft")next=(index+sections.length-1)%sections.length;else if(event.key==="Home")next=0;else if(event.key==="End")next=sections.length-1;else return;
+        event.preventDefault();select(sections[next].id);
+      });
+    });
+    const body=root.createDiv({cls:"qh-settings-body",attr:{role:"tabpanel",id:`${this.instance}-panel`,"aria-labelledby":`${this.instance}-${this.activeSection}`}});
+    if(this.activeSection==="home")this.renderHome(body);
+    if(this.activeSection==="appearance")this.renderAppearance(body);
+    if(this.activeSection==="capture")this.renderCapture(body);
+    if(this.activeSection==="about")this.renderAbout(body);
+  }
+  private async arrange(pageId: string): Promise<void> {
+    const setting=(this.app as unknown as {setting?:{close?():void}}).setting;
+    setting?.close?.();(await this.plugin.openHome())?.editLayout(pageId);
+  }
+  private renderHome(containerEl: HTMLElement): void {
+    const settings=this.plugin.settings, save=(rerender=true)=>this.save(rerender);
     new Setting(containerEl).setName(L("打开方式", "Opening")).setHeading();
     new Setting(containerEl)
       .setName(L("启动时打开主页", "Open on startup"))
@@ -82,13 +109,48 @@ export class HomeSettingTab extends PluginSettingTab {
       .setDesc(L("代替 Obsidian 的空白新标签页。", "Replace Obsidian's empty new tab."))
       .addToggle((toggle) => toggle.setValue(settings.replaceNewTab).onChange(async (value) => { settings.replaceNewTab = value; await save(false); }));
 
+    new Setting(containerEl).setName(L("页签与内容","Pages and content")).setHeading();
+    new Setting(containerEl).setName(L("显示页签","Show pages")).setDesc(L("关闭后只显示主页，其他页签保留。","When off, show Home and keep the other pages saved."))
+      .addToggle(toggle=>toggle.setValue(settings.tabsEnabled).onChange(async value=>{settings.tabsEnabled=value;await save();}));
+    const list=containerEl.createDiv({cls:"qh-settings-page-list"});
+    for(const page of settings.pages){
+      const row=new Setting(list).setName(page.name||t("pages.default"));
+      if(page.id===settings.homePageId)row.setDesc(L("默认主页 · 不可删除","Default Home · cannot be deleted"));
+      row.addButton(button=>button.setButtonText(L("布置","Customize")).onClick(()=>this.arrange(page.id)));
+      iconButton(row.controlEl,"pencil",t("pages.rename"),()=>new NewPageModal(this.app,async name=>{const target=settings.pages.find(p=>p.id===page.id);if(target)target.name=name;await save();this.renderSettings();},page.name||t("pages.default"),t("pages.rename")).open());
+      iconButton(row.controlEl,"trash-2",t("pages.delete"),()=>new DeletePageModal(this.app,page.name||t("pages.default"),async()=>{removePage(settings,page.id);await save();this.renderSettings();}).open(),page.id===settings.homePageId);
+    }
+    const preset=new Setting(containerEl).setName(L("添加预设页签","Add a preset page")).setDesc(L("现有内容保持不变。新页签可改名、删除或重新布置。","Keeps existing content. New preset pages can be renamed, removed or customized."));
+    for(const kind of ["reading","entertainment"] as const)preset.addButton(button=>button.setButtonText(kind==="reading"?L("阅读","Reading"):L("娱乐","Entertainment")).onClick(async()=>{button.setDisabled(true);addPresetPage(settings,kind);await save();this.renderSettings();}));
+    const page=currentPage(settings);
+    new Setting(containerEl).setName(L("当前页显示插件推荐","Show plugin suggestions on current page")).setDesc(page.name||t("pages.default"))
+      .addToggle(toggle=>toggle.setValue(page.showRecommendations).onChange(async value=>{page.showRecommendations=value;await save();}));
+    if(settings.hiddenRecommendations.length)new Setting(containerEl).setName(L("已隐藏的推荐","Hidden suggestions")).addButton(button=>button.setButtonText(L("恢复","Restore")).onClick(async()=>{settings.hiddenRecommendations=[];await save();this.renderSettings();}));
+    const details=containerEl.createEl("details",{cls:"qh-settings-details"});
+    details.createEl("summary",{text:L("新建菜单与命令","Create menu and commands")});
+    this.renderActions(details.createDiv());
+  }
+  private renderAppearance(containerEl: HTMLElement): void {
+    const settings=this.plugin.settings,wall=settings.wallpaper,save=(rerender=true)=>this.save(rerender);
     new Setting(containerEl).setName(L("外观", "Appearance")).setHeading();
     new Setting(containerEl)
       .setName(L("顶部显示", "Headline"))
       .addDropdown((dropdown) => dropdown
-        .addOptions({ clock: L("时间与问候", "Time and greeting"), brand: L("乔木Home", "Qiaomu Home"), vault: L("仓库名称", "Vault name") })
+        .addOptions({ clock: L("时间与问候", "Time and greeting"), custom: L("自定义文本", "Custom text") })
         .setValue(settings.headline)
-        .onChange(async (value) => { settings.headline = value as Headline; await save(); }));
+        .onChange(async (value) => { settings.headline = value as Headline; await save(); this.renderSettings(); }));
+    if (settings.headline === "custom") new Setting(containerEl)
+      .setName(L("自定义文本", "Custom text"))
+      .setDesc(L("留空显示时间与问候。", "Leave blank to show time and greeting."))
+      .addText(input => {
+        input.inputEl.maxLength = 120;
+        input.setValue(settings.customHeadline).setPlaceholder(L("今天，也做一点喜欢的事", "Make time for what matters"))
+          .onChange(async value => {
+            settings.customHeadline = value.slice(0,120);
+            await save(false);
+            this.plugin.eachView(view=>view.refreshHeadline());
+          });
+      });
     new Setting(containerEl)
       .setName(L("壁纸", "Wallpaper"))
       .addDropdown((dropdown) => dropdown
@@ -104,7 +166,7 @@ export class HomeSettingTab extends PluginSettingTab {
           await save(false);
           await this.plugin.wallpaper.prepareForView();
           this.plugin.eachView((view) => void view.renderPhoto());
-          this.display();
+          this.renderSettings();
         }));
 
     if (wall.source === "unsplash") {
@@ -159,14 +221,17 @@ export class HomeSettingTab extends PluginSettingTab {
           }));
     }
 
-    new Setting(containerEl).setName(L("主页内容", "Content")).setHeading();
+  }
+  private renderCapture(containerEl: HTMLElement): void {
+    const settings=this.plugin.settings,save=(rerender=true)=>this.save(rerender);
+    new Setting(containerEl).setName(L("快速记录", "Quick capture")).setHeading();
     new Setting(containerEl)
       .setName(L("快速记录保存到", "Quick capture destination"))
       .setDesc(L("在搜索框输入后按 ⇧↵，不离开主页。", "Type in search and press Shift+Enter without leaving Home."))
       .addDropdown((dropdown) => dropdown
         .addOptions({ daily: L("今日日记", "Today's daily note"), inbox: "Inbox" })
         .setValue(settings.captureTarget)
-        .onChange(async (value) => { settings.captureTarget = value as "daily" | "inbox"; await save(); this.display(); }));
+        .onChange(async (value) => { settings.captureTarget = value as "daily" | "inbox"; await save(); this.renderSettings(); }));
     if (settings.captureTarget === "inbox") {
       new Setting(containerEl)
         .setName(L("Inbox 笔记路径", "Inbox note path"))
@@ -175,103 +240,32 @@ export class HomeSettingTab extends PluginSettingTab {
           settings.captureInboxPath = value.trim(); await save(false);
         }));
     }
-    const pageHeading = new Setting(containerEl).setName(L("页签与模块", "Pages and cards")).setHeading();
-    new Setting(containerEl).setName(L("启用页签模式", "Enable pages"))
-      .setDesc(L("每页独立设置模块和条数；关闭后显示第一个页签。", "Each page has its own cards and item counts. When off, Home shows the first page."))
-      .addToggle((toggle) => toggle.setValue(settings.tabsEnabled).onChange(async (value) => {
-        settings.tabsEnabled = value; this.editingPageId = undefined; await save(); this.display();
-      }));
-    const page = currentPage(settings, settings.tabsEnabled ? this.editingPageId : undefined);
-    this.editingPageId = page.id;
-    if (settings.tabsEnabled) {
-      new Setting(containerEl).setName(L("配置页签", "Edit page"))
-        .addDropdown((dropdown) => dropdown.addOptions(Object.fromEntries(settings.pages.map((item) => [item.id, item.name || t("pages.default")])))
-          .setValue(page.id).onChange((id) => { this.editingPageId = id; this.display(); }))
-        .addButton((button) => button.setButtonText(t("pages.add")).onClick(() => {
-          new NewPageModal(this.app, async (name) => {
-            this.editingPageId = addPage(settings, name).id;
-            await save(); this.display();
-          }).open();
-        }));
-      new Setting(containerEl).setName(t("pages.name"))
-        .addText((input) => {
-          input.setValue(page.name || t("pages.default"));
-          input.inputEl.maxLength = 80;
-          input.inputEl.addEventListener("change", () => {
-            page.name = input.getValue().trim().slice(0, 80);
-            void save().then(() => this.display());
-          });
-        });
-      const order = new Setting(containerEl).setName(L("页签顺序", "Page order"));
-      const index = settings.pages.indexOf(page);
-      iconButton(order.controlEl, "arrow-left", L("前移", "Move earlier"), () => {
-        movePage(settings, page.id, -1); void save().then(() => this.display());
-      }, index === 0);
-      iconButton(order.controlEl, "arrow-right", L("后移", "Move later"), () => {
-        movePage(settings, page.id, 1); void save().then(() => this.display());
-      }, index === settings.pages.length - 1);
-      order.addButton((button) => button.setButtonText(t("pages.delete")).setDisabled(settings.pages.length === 1).onClick(() => {
-        new DeletePageModal(this.app, page.name || t("pages.default"), async () => {
-          removePage(settings, page.id); this.editingPageId = undefined; await save(); this.display();
-        }).open();
-      }));
-    }
-    if (this.scrollToPage) { pageHeading.settingEl.scrollIntoView({ block: "start" }); this.scrollToPage = false; }
-    this.renderModuleOption(containerEl, "recent", L("最近笔记", "Recent notes"));
-    this.renderModuleOption(containerEl, "bookmarks", L("常用书签", "Bookmarks"));
-    const ids = new Set([...KNOWN_PLUGINS.map((plugin) => plugin.id), ...findHomeProviders(this.app).map(([id]) => id)]);
-    for (const id of ids) {
-      const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
-      this.renderModuleOption(containerEl, id, known ? localized(known.name) : pluginName(this.app, id));
-    }
-    new Setting(containerEl)
-      .setName(L("推荐乔木插件", "Suggest Qiaomu plugins"))
-      .setDesc(settings.hiddenRecommendations.length ? L(`已隐藏 ${settings.hiddenRecommendations.length} 个推荐。`, `${settings.hiddenRecommendations.length} hidden.`) : "")
-      .addToggle((toggle) => toggle.setValue(page.showRecommendations).onChange(async (value) => { page.showRecommendations = value; await save(); }))
-      .then((setting) => {
-        if (!settings.hiddenRecommendations.length) return;
-        setting.addButton((button) => button.setButtonText(L("全部恢复", "Show all")).onClick(async () => {
-          settings.hiddenRecommendations = [];
-          await save();
-          this.display();
-        }));
-      });
-
-    this.renderActions(containerEl);
-
-    new Setting(containerEl).setName(L("关于", "About")).setHeading();
-    new Setting(containerEl)
-      .setName(`${L("乔木Home", "Qiaomu Home")} ${this.plugin.manifest.version}`)
-      .setDesc(createFragment((fragment) => {
-        fragment.appendText(L("其他插件可以接入主页：", "Other plugins can join Home: "));
-        fragment.createEl("a", { text: L("乔木Home 协议", "Qiaomu Home protocol"), href: `${REPO}/blob/main/docs/qiaomu-home-protocol.md` });
-        fragment.appendText(" · ");
-        fragment.createEl("a", { text: "GitHub", href: REPO });
-      }));
+    new Setting(containerEl).setName(L("今日代办","Today’s tasks")).setHeading();
+    renderTodoPreferences(containerEl,this.plugin,()=>this.renderSettings());
   }
-
-  private renderModuleOption(containerEl: HTMLElement, id: string, name: string): void {
-    const settings = this.plugin.settings;
-    const page = currentPage(settings, this.editingPageId);
-    const current = moduleOptions(settings, id, page.id);
-    new Setting(containerEl)
-      .setName(name)
-      .addToggle((toggle) => toggle.setValue(current.visible).onChange(async (visible) => {
-        page.moduleOptions[id] = { ...moduleOptions(settings, id, page.id), visible };
-        await this.plugin.saveSettings();
-      }))
-      .addDropdown((dropdown) => dropdown
-        .addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, index) => {
-          const n = index + 1;
-          return [String(n), L(`${n} 条`, `${n} items`)];
-        })))
-        .setValue(String(current.limit))
-        .onChange(async (value) => {
-          page.moduleOptions[id] = { ...moduleOptions(settings, id, page.id), limit: Number(value) };
-          await this.plugin.saveSettings();
-        }));
+  private renderAbout(containerEl: HTMLElement): void {
+    const release=containerEl.createDiv({cls:"qh-settings-release"});
+    release.createSpan({text:L("当前版本","Current version")});release.createEl("strong",{text:`v${this.plugin.manifest.version}`});
+    const links=containerEl.createDiv({cls:"qh-settings-links"});
+    for(const [icon,label,url] of [["history",L("更新日志","Changelog"),`${REPO}/releases`],["bug",L("反馈问题","Report an issue"),`${REPO}/issues/new`],["book-open",L("使用说明","Help"),`${REPO}#readme`]]){
+      const link=links.createEl("a",{href:url,attr:{target:"_blank",rel:"noopener noreferrer"}});setIcon(link.createSpan({attr:{"aria-hidden":"true"}}),icon);link.createSpan({text:label});
+    }
+    new Setting(containerEl).setName(L("插件接入","Plugin integration")).setDesc(createFragment(f=>{f.createEl("a",{text:L("乔木 Home 协议","Qiaomu Home protocol"),href:`${REPO}/blob/main/docs/qiaomu-home-protocol.md`});}));
+    const support = containerEl.createDiv({cls:"qh-settings-support"});
+    for (const [icon, title, caption, url] of [
+      ["newspaper", L("关注公众号", "Follow Qiaomu"), L("微信搜索「向阳乔木推荐看」", "WeChat: 向阳乔木推荐看"), "https://radio.qiaomu.ai/assets/qiaomu_wechat_public_account_qr.jpg"],
+      ["coffee", L("请我喝杯咖啡", "Buy me a coffee"), L("微信扫码，支持持续更新", "Scan in WeChat to support development"), "https://radio.qiaomu.ai/assets/qiaomu_reward_qr.png"],
+    ]) {
+      const card = support.createDiv({cls:"qh-settings-support-card"});
+      const heading = card.createDiv({cls:"qh-settings-support-heading"});
+      setIcon(heading.createSpan({attr:{"aria-hidden":"true"}}),icon);
+      heading.createSpan({text:title});
+      const image = card.createEl("img",{attr:{src:url,alt:title,loading:"lazy",width:"148",height:"148",referrerpolicy:"no-referrer"}});
+      image.addEventListener("error",()=>{image.hidden=true;card.createEl("a",{text:L("打开二维码", "Open QR code"),href:url,attr:{target:"_blank",rel:"noopener noreferrer"}});},{once:true});
+      card.createDiv({cls:"setting-item-description",text:caption});
+    }
+    const footer=containerEl.createDiv({cls:"qh-settings-footer"});footer.createEl("a",{text:"GitHub",href:REPO});footer.createSpan({text:" · "});footer.createEl("a",{text:"qiaomu.ai",href:"https://qiaomu.ai/"});
   }
-
   private renderActions(containerEl: HTMLElement): void {
     const settings = this.plugin.settings;
     new Setting(containerEl).setName(L("新建", "Create")).setHeading();
@@ -288,7 +282,7 @@ export class HomeSettingTab extends PluginSettingTab {
       order.splice(index + delta, 0, item);
       settings.actions = order;
       await this.plugin.saveSettings();
-      this.display();
+      this.renderSettings();
     };
     actions.forEach((action, index) => {
       const setting = new Setting(containerEl);
@@ -302,7 +296,7 @@ export class HomeSettingTab extends PluginSettingTab {
           const id = action.key.slice("command:".length);
           settings.commands = settings.commands.filter((command) => command.id !== id);
           settings.actions = settings.actions.filter((key) => key !== action.key);
-          void this.plugin.saveSettings().then(() => this.display());
+          void this.plugin.saveSettings().then(() => this.renderSettings());
         });
       }
       setting.addToggle((toggle) => toggle.setValue(!settings.hiddenActions.includes(action.key)).onChange(async (visible) => {
@@ -319,7 +313,7 @@ export class HomeSettingTab extends PluginSettingTab {
           const label = command.name.includes(": ") ? command.name.slice(command.name.indexOf(": ") + 2) : command.name;
           settings.commands = [...settings.commands, { id: command.id, label: label.slice(0, 24), icon: command.icon ?? "terminal-square" }];
           settings.actions = [...keys, `command:${command.id}`];
-          void this.plugin.saveSettings().then(() => this.display());
+          void this.plugin.saveSettings().then(() => this.renderSettings());
         }).open();
       }));
   }

@@ -1,3 +1,4 @@
+import { openTodayNote } from "./today";
 import { Notice, TFile, normalizePath, type App, type WorkspaceLeaf } from "obsidian";
 import { commandExists, runCommand } from "./ecosystem";
 import { t } from "./i18n";
@@ -21,7 +22,7 @@ const BUILTINS: Array<{ key: string; icon: string; label: () => string; command:
 export function builtinActions(app: App): CreateAction[] {
   const actions: CreateAction[] = BUILTINS.filter((item) => commandExists(app, item.command)).map((item) => ({
     key: item.key, icon: item.icon, label: item.label(),
-    run: () => { if (!runCommand(app, item.command)) new Notice(t("error.command")); },
+    run: (leaf) => { if (item.key === "builtin:daily") return openTodayNote(app, leaf); if (!runCommand(app, item.command)) new Notice(t("error.command")); },
   }));
   actions.push({ key: "builtin:import", icon: "file-up", label: t("new.import"), run: (leaf) => pickAndImport(app, leaf) });
   return actions;

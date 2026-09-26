@@ -1,23 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { TFile, type App } from "obsidian";
-import { flattenBookmarks } from "../src/bookmarks";
+import { TFile, type App, type WorkspaceLeaf } from "obsidian";
 import { normalizeSettings } from "../src/settings";
-import { captureNote, todayPath } from "../src/today";
+import { captureNote, todayPath, openTodayNote } from "../src/today";
 
 describe("Home 0.2", () => {
-  it("flattens native bookmark groups and keeps file/search order", () => {
-    expect(flattenBookmarks([
-      { type: "group", title: "Work", items: [{ type: "file", path: "Notes/Plan.md", subpath: "#Next" }] },
-      { type: "search", query: "tag:#idea", title: "Ideas" },
-      null,
-      { type: "file", path: "Notes/More.md" },
-    ])).toEqual([
-      { type: "file", title: "Plan", value: "Notes/Plan.md", subpath: "#Next" },
-      { type: "search", title: "Ideas", value: "tag:#idea" },
-      { type: "file", title: "More", value: "Notes/More.md" },
-    ]);
-  });
-
   it("appends repeated captures atomically without opening a note", async () => {
     const files = new Map<string, { file: TFile; content: string }>();
     const app = { vault: {
@@ -68,4 +54,18 @@ describe("Home 0.2", () => {
     expect(createdPath).toBe("Journal/2026-09-26.md");
     expect(createdContent).toBe("# 2026-09-26\n- idea\n");
   });
+});
+
+it("creates missing daily folders and a templated diary once, then opens without overwriting", async()=>{
+  const files=new Map<string,TFile>(); const folders=new Set<string>(); const contents=new Map<string,string>();
+  const template=new TFile();files.set("Template.md",template);contents.set("Template.md","# {{title}}\n{{time:HH:mm}}\n");
+  const opened:TFile[]=[];
+  const app={commands:{commands:{"daily-notes":{}}},internalPlugins:{getPluginById:()=>({instance:{options:{folder:"Diary/2026",template:"Template",format:"YYYY-MM-DD"}}})},vault:{configDir:".obsidian",adapter:{exists:async(p:string)=>folders.has(p)},getAbstractFileByPath:(p:string)=>files.get(p),createFolder:async(p:string)=>{folders.add(p);},read:async(f:TFile)=>contents.get([...files].find(([,v])=>v===f)![0]),create:async(p:string,c:string)=>{if(files.has(p))throw Error("exists");const f=new TFile();files.set(p,f);contents.set(p,c);return f;}}} as unknown as App;
+  const leaf={openFile:async(f:TFile)=>{opened.push(f);}} as unknown as WorkspaceLeaf;
+  await Promise.all([openTodayNote(app,leaf),openTodayNote(app,leaf)]);
+  expect(folders.has("Diary/2026")).toBe(true);
+  expect(contents.get("Diary/2026/2026-09-26.md")).toBe("# 2026-09-26\nHH:mm\n");
+  contents.set("Diary/2026/2026-09-26.md","User work");await openTodayNote(app,leaf);
+  expect(contents.get("Diary/2026/2026-09-26.md")).toBe("User work");
+  expect(new Set(opened).size).toBe(1);
 });

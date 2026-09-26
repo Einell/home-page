@@ -15,7 +15,7 @@ describe("Home page layouts", () => {
   });
 
   it("keeps page content independent and preserves it through toggling and reload", () => {
-    const settings = normalizeSettings(null);
+    const settings = normalizeSettings({ tabsEnabled: false });
     const home = currentPage(settings);
     home.moduleOptions.reader = { visible: true, limit: 5 };
     const reading = addPage(settings, "阅读");
@@ -32,7 +32,7 @@ describe("Home page layouts", () => {
   });
 
   it("preserves active identity when reordering and picks a remaining page when deleting", () => {
-    const settings = normalizeSettings(null);
+    const settings = normalizeSettings({ tabsEnabled: false });
     const reading = addPage(settings, "阅读");
     const work = addPage(settings, "工作");
     movePage(settings, work.id, -1);
@@ -53,5 +53,40 @@ describe("Home page layouts", () => {
     expect(currentPage(settings).name).toBe("Work");
     expect(moduleOptions(settings, "reader")).toEqual({ visible: false, limit: 6 });
     expect(normalizeSettings({ pages: [null], moduleOptions: { reader: { visible: false } } }).pages[0].moduleOptions.reader.visible).toBe(false);
+  });
+});
+
+import { addPresetPage, reorderPage } from '../src/pages';
+describe('starter pages and permanent Home identity',()=>{
+  it('starts with three useful independent presets',()=>{
+    const settings=normalizeSettings(null);
+    expect(settings.pages.map(page=>page.name)).toEqual(['主页','阅读','娱乐']);
+    expect(settings.tabsEnabled).toBe(true);
+    expect(moduleOptions(settings,'todo','home')).toEqual({visible:true,limit:3});
+    expect(moduleOptions(settings,'qiaomu-reader','reading').visible).toBe(true);
+    expect(moduleOptions(settings,'qiaomu-radio','entertainment').visible).toBe(true);
+    settings.pages[1].moduleOptions['qiaomu-reader'].limit=1;
+    expect(normalizeSettings(null).pages[1].moduleOptions['qiaomu-reader'].limit).toBe(3);
+  });
+  it('protects Home after rename and reorder, and does not revive deleted preset pages',()=>{
+    const settings=normalizeSettings(null);
+    settings.pages[0].name='我的起点';
+    reorderPage(settings,'home','entertainment',true);
+    expect(removePage(settings,'home')).toBe(false);
+    expect(removePage(settings,'reading')).toBe(true);
+    settings.tabsEnabled=false;
+    const loaded=normalizeSettings(JSON.parse(JSON.stringify(settings)));
+    expect(currentPage(loaded).id).toBe('home');
+    expect(loaded.pages.some(page=>page.id==='reading')).toBe(false);
+    expect(removePage(loaded,'home')).toBe(false);
+  });
+  it('keeps existing custom layouts and adds presets without replacing anything',()=>{
+    const settings=normalizeSettings({tabsEnabled:true,pages:[{id:'custom',name:'工作',moduleOptions:{recent:{visible:true,limit:2}},moduleOrder:['recent']}]});
+    const before=structuredClone(settings.pages[0]);
+    const preset=addPresetPage(settings,'reading');
+    expect(settings.pages[0]).toEqual(before);
+    expect(removePage(settings,'custom')).toBe(false);
+    expect(removePage(settings,preset.id)).toBe(true);
+    expect(normalizeSettings(settings).pages).toHaveLength(1);
   });
 });

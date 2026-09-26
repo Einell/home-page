@@ -1,19 +1,26 @@
+import { renderTodo } from "./todo-ui";
+import { isChinese } from "./i18n";
+import { DragFeedback, dropAfter } from "./drag-feedback";
+import { editShortcutGroup, MoveShortcutModal, renderShortcutGroup } from "./shortcut-ui";
+import { shortcutModuleId } from "./shortcuts";
 import { Events, ItemView, Keymap, Menu, Notice, Platform, TFile, debounce, setIcon, type App, type WorkspaceLeaf } from "obsidian";
 import { builtinActions, createNamedNote, newNote, type CreateAction } from "./actions";
 import { askAgent, canAsk } from "./agent-bridge";
-import { loadBookmarks } from "./bookmarks";
 import {
   KNOWN_PLUGINS, commandExists, installState, localized, openCommunityPluginSettings, openPluginPage, pluginName, runCommand,
 } from "./ecosystem";
 import { greeting, relativeTime, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { currentPage, moduleOptions, type HomeSettings } from "./settings";
-import { addPage } from "./pages";
-import { NewPageModal } from "./page-dialogs";
+import { currentPage, moduleOptions, moduleSource, type HomeSettings } from "./settings";
+import { addPage, duplicatePage, movePage, removePage, reorderPage } from "./pages";
+import { orderModules, reorderModule, setModule } from "./layout";
+import { pluginModules, type HomeModule } from "./module-catalog";
+import { ModuleLibrary, ModuleOptionsModal, MoveModuleModal } from "./module-library";
+import { NewPageModal, DeletePageModal } from "./page-dialogs";
 import { connectionSnapshot, connectionsChanged, connectionState } from "./connections";
 import { HOME_CHANGED_EVENT, findHomeProviders, type HomeAction, type HomeItem, type HomeProvider, type HomeSection } from "./protocol/qiaomu-home";
 import { SEARCHABLE, noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
-import { loadActions, loadSections, searchProvider, type SourceResult } from "./sources";
+import { loadActions, searchProvider } from "./sources";
 import { captureNote } from "./today";
 
 export const HOME_VIEW_TYPE = "qiaomu-home";
@@ -73,6 +80,12 @@ export class HomeView extends ItemView {
   private tabsEl!: HTMLElement;
   private activePageId = "";
   private tabsSignature = "";
+  private editing = false;
+  private dragFeedback!: DragFeedback;
+  private movedModule: string | null = null;
+  private movedShortcut: string | null = null;
+  markMovedShortcut(id: string): void { this.movedShortcut = id; }
+  private dragging: { kind: "card" | "page"; id: string; pageId: string } | null = null;
   private readonly pageInstance = `qh-pages-${crypto.randomUUID()}`;
   private connections: unknown[] = [];
 
@@ -97,6 +110,7 @@ export class HomeView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("qh-root");
+    this.dragFeedback = new DragFeedback(root);
     const backdrop = root.createDiv({ cls: "qh-backdrop" });
     this.photoEl = backdrop.createDiv({ cls: "qh-photo" });
     backdrop.createDiv({ cls: "qh-shade" });
@@ -110,6 +124,10 @@ export class HomeView extends ItemView {
 
     this.registerEvent((this.app.workspace as Events).on(HOME_CHANGED_EVENT, () => this.refreshSoon()));
     this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => { if (leaf === this.leaf) this.refreshSoon(); }));
+    const refreshTodo = debounce(() => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh"))), 300, true);
+    this.register(() => refreshTodo.cancel());
+    this.registerEvent(this.app.vault.on("modify", file => { if (this.plugin.settings.todoDaily || file.path === this.plugin.settings.todoPath) refreshTodo(); }));
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (this.plugin.settings.todoDaily || info.file?.path === this.plugin.settings.todoPath) refreshTodo(); }));
     this.registerEvent(this.app.vault.on("rename", () => this.refreshSoon()));
     this.registerEvent(this.app.vault.on("delete", () => this.refreshSoon()));
     this.registerDomEvent(root.ownerDocument, "pointerdown", (event) => {
@@ -118,6 +136,11 @@ export class HomeView extends ItemView {
       this.closeResults();
     });
     this.registerInterval(window.setInterval(() => this.tick(), 1000));
+    // Also recover when a drag ends outside its original card or is cancelled.
+    this.registerDomEvent(this.contentEl.ownerDocument, "dragend", () => this.cancelDrag());
+    this.registerDomEvent(this.contentEl.ownerDocument, "keydown", (event) => {
+      if (event.key === "Escape") this.cancelDrag();
+    });
     this.connections = connectionSnapshot(this.app);
     this.registerInterval(window.setInterval(() => {
       if (!this.contentEl.isConnected) return;
@@ -137,6 +160,7 @@ export class HomeView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.dragFeedback?.clear();
     this.searchGeneration++;
     this.sectionsGeneration++;
     this.photoGeneration++;
@@ -163,28 +187,30 @@ export class HomeView extends ItemView {
 
   // Header -----------------------------------------------------------------
 
+  refreshHeadline(): void { this.renderHead(); }
+
   private renderHead(): void {
     this.headEl.empty();
     this.timeEl = this.subEl = null;
     this.lastMinute = "";
     const headline = this.plugin.settings.headline;
-    if (headline === "clock") {
+    if (headline === "clock" || !this.plugin.settings.customHeadline.trim()) {
       this.timeEl = this.headEl.createDiv({ cls: "qh-time" });
       this.subEl = this.headEl.createDiv({ cls: "qh-sub" });
       this.tick();
       return;
     }
     const brand = this.headEl.createDiv({ cls: "qh-brand" });
-    setIcon(brand.createSpan({ cls: "qh-brand-mark" }), headline === "brand" ? "trees" : "vault");
-    brand.createSpan({ cls: "qh-brand-name", text: headline === "brand" ? t("brand") : this.app.vault.getName() });
+    brand.createSpan({ cls: "qh-brand-name", text: this.plugin.settings.customHeadline });
   }
 
   private tick(): void {
-    if (!this.timeEl || !this.subEl) return;
     const now = new Date();
     const minute = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (minute === this.lastMinute) return;
     this.lastMinute = minute;
+    this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
+    if (!this.timeEl || !this.subEl) return;
     this.timeEl.setText(minute);
     const date = now.toLocaleDateString([], { month: "long", day: "numeric", weekday: "long" });
     this.subEl.setText(`${greeting(now.getHours())} · ${date}`);
@@ -491,10 +517,181 @@ export class HomeView extends ItemView {
 
   private runAction(action: CreateAction): void {
     this.app.workspace.setActiveLeaf(this.leaf, { focus: true });
-    void Promise.resolve(action.run(this.leaf)).catch((error: unknown) => console.error("Qiaomu Home: action failed", error));
+    void Promise.resolve(action.run(this.leaf)).catch((error: unknown) => { console.error("Qiaomu Home: action failed", error); new Notice(error instanceof Error ? error.message : t("error.command")); });
   }
 
   // Continue area ----------------------------------------------------------
+
+  openLibrary(pageId = currentPage(this.plugin.settings).id): void {
+    new ModuleLibrary(this.plugin, pageId).open();
+  }
+
+  addPage(): void {
+    new NewPageModal(this.app, async (name) => {
+      const page = addPage(this.plugin.settings, name);
+      await this.plugin.saveSettings();
+      window.setTimeout(() => { if (this.contentEl.isConnected) this.openLibrary(page.id); }, 0);
+    }).open();
+  }
+
+  editLayout(pageId: string): void {
+    if (!this.plugin.settings.pages.some(page=>page.id===pageId)) return;
+    this.plugin.settings.activePageId=pageId;this.plugin.settings.tabsEnabled=true;
+    this.editing=true;this.tabsSignature="";this.refreshContent();
+    void this.plugin.saveSettings({rerender:false});
+  }
+
+  private shortcutDragging = false;
+
+  private saveLayout(): void {
+    void this.plugin.saveSettings().catch((error: unknown) => {
+      new Notice(t("layout.saveFailed"));
+      console.error("Qiaomu Home: could not save layout", error);
+    });
+  }
+
+  private pageMenu(event: MouseEvent, id: string): void {
+    const settings = this.plugin.settings;
+    const page = settings.pages.find((item) => item.id === id);
+    if (!page) return;
+    const name = page.name || t("pages.default");
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle(t("library.title")).setIcon("plus").onClick(() => this.openLibrary(id)));
+    menu.addItem((item) => item.setTitle(t("pages.rename")).setIcon("pencil").onClick(() => {
+      new NewPageModal(this.app, async (value) => {
+        const target = settings.pages.find((entry) => entry.id === id);
+        if (!target) return;
+        target.name = value;
+        await this.plugin.saveSettings();
+      }, name, t("pages.rename")).open();
+    }));
+    menu.addItem((item) => item.setTitle(t("pages.duplicate")).setIcon("copy").onClick(() => {
+      new NewPageModal(this.app, async (value) => {
+        duplicatePage(settings, id, value);
+        await this.plugin.saveSettings();
+      }, t("pages.copyName", { name }), t("pages.duplicate")).open();
+    }));
+    const index = settings.pages.indexOf(page);
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle(t("layout.earlier")).setIcon("arrow-left").setDisabled(index === 0).onClick(() => {
+      movePage(settings, id, -1); this.saveLayout();
+    }));
+    menu.addItem((item) => item.setTitle(t("layout.later")).setIcon("arrow-right").setDisabled(index === settings.pages.length - 1).onClick(() => {
+      movePage(settings, id, 1); this.saveLayout();
+    }));
+    menu.addSeparator();
+    menu.addItem((item) => item.setTitle(t("pages.delete")).setIcon("trash-2").setDisabled(id === settings.homePageId || settings.pages.length === 1).onClick(() => {
+      new DeletePageModal(this.app, name, async () => {
+        removePage(settings, id);
+        await this.plugin.saveSettings();
+      }).open();
+    }));
+    menu.showAtMouseEvent(event);
+  }
+
+  private decorateCard(card: HTMLElement, id: string, pageId: string, ordered: string[]): void {
+    const head = card.querySelector<HTMLElement>(".qh-card-head");
+    if (!head) return;
+    const name = card.querySelector(".qh-card-title")?.textContent ?? "";
+    const menuButton = head.createEl("button", { cls: "qh-icon-button qh-module-menu" });
+    setIcon(menuButton, "ellipsis"); hiddenLabel(menuButton, t("layout.menu"));
+    menuButton.addEventListener("click", (event) => {
+      const menu = new Menu();
+      if (id.startsWith("shortcut:")) {
+        const groupId = id.slice("shortcut:".length);
+        menu.addItem((item) => item.setTitle(t("shortcut.renameGroup")).setIcon("pencil").onClick(() => editShortcutGroup(this.plugin, pageId, groupId)));
+        menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(this.plugin, pageId, groupId).open()));
+        menu.addSeparator();
+      } else if (id !== "recommendations") {
+        menu.addItem((item) => item.setTitle(t("layout.count")).setIcon("list-ordered").onClick(() => new ModuleOptionsModal(this.plugin, pageId, id, name).open()));
+        menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveModuleModal(this.plugin, pageId, id).open()));
+        menu.addSeparator();
+      }
+      const index = ordered.indexOf(id);
+      for (const delta of [-1, 1]) menu.addItem((item) => item.setTitle(t(delta < 0 ? "layout.earlier" : "layout.later"))
+        .setIcon(delta < 0 ? "arrow-up" : "arrow-down").setDisabled(index + delta < 0 || index + delta >= ordered.length).onClick(() => {
+          const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+          if (page && reorderModule(page, id, ordered[index + delta], ordered, delta > 0)) this.saveLayout();
+        }));
+      menu.addSeparator();
+      menu.addItem((item) => item.setTitle(t("layout.remove")).setIcon("minus-circle").onClick(() => {
+        const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+        if (!page) return;
+        if (id === "recommendations") page.showRecommendations = false;
+        else setModule(this.plugin.settings, pageId, id, { visible: false });
+        this.saveLayout();
+      }));
+      menu.showAtMouseEvent(event);
+    });
+    if (this.editing) {
+      const handle = head.createEl("button", { cls: "qh-icon-button qh-drag-handle" });
+      setIcon(handle, "grip-vertical"); hiddenLabel(handle, t("layout.drag"));
+      head.prepend(handle);
+      handle.addEventListener("click", () => menuButton.click());
+      this.enableDrag(handle, card, "card", id, pageId);
+    }
+  }
+
+  private cancelDrag(): void {
+    if (!this.dragging && !this.shortcutDragging) return;
+    this.shortcutDragging = false;
+    this.dragging = null;
+    this.dragFeedback.clear();
+    this.contentEl.querySelectorAll(".qh-dragging, .qh-drop-target").forEach((el) => el.removeClass("qh-dragging", "qh-drop-target"));
+    this.refreshContent();
+  }
+
+  private enableDrag(handle: HTMLElement, target: HTMLElement, kind: "card" | "page", id: string, pageId: string): void {
+    handle.draggable = true;
+    handle.addEventListener("dragstart", (event) => {
+      if (!event.dataTransfer) return;
+      this.dragging = { kind, id, pageId };
+      event.dataTransfer.setData("application/x-qiaomu-home-layout", id);
+      event.dataTransfer.effectAllowed = "move";
+      this.dragFeedback.start(target, event, target.querySelector(".qh-card-title")?.textContent ?? target.textContent ?? "");
+    });
+    target.addEventListener("dragover", (event) => {
+      const from = this.dragging;
+      if (!from || from.kind !== kind || from.id === id || from.pageId !== pageId) return;
+      event.preventDefault();
+      this.dragFeedback.over(target, event, kind === "page" ? "x" : "y");
+    });
+    target.addEventListener("dragleave", (event) => this.dragFeedback.leave(target, event));
+    target.addEventListener("drop", (event) => {
+      const from = this.dragging;
+      if (!from || from.kind !== kind || from.id === id || from.pageId !== pageId) return;
+      event.preventDefault(); event.stopPropagation();
+      const rect = target.getBoundingClientRect();
+      const after = dropAfter(kind === "page" ? "x" : "y", rect, event);
+      let changed = false;
+      if (kind === "page") changed = reorderPage(this.plugin.settings, from.id, id, after);
+      else {
+        const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+        const ids = Array.from(this.gridEl.querySelectorAll<HTMLElement>(".qh-card")).map((card) => card.dataset.module!);
+        if (page) changed = reorderModule(page, from.id, id, ids, after);
+      }
+      this.dragging = null;
+      this.dragFeedback.clear();
+      if (changed) {
+        this.movedModule = kind === "card" ? from.id : null;
+        if (kind === "card") {
+          const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+          const cards = Array.from(this.gridEl.querySelectorAll<HTMLElement>(".qh-card"));
+          if (page) for (const key of orderModules(page, cards.map((card) => card.dataset.module!))) {
+            const card = cards.find((entry) => entry.dataset.module === key);
+            if (card) this.gridEl.appendChild(card);
+          }
+        } else this.renderPages();
+        this.saveLayout();
+      }
+    });
+    handle.addEventListener("dragend", () => {
+      this.dragging = null;
+      this.dragFeedback.clear();
+      this.contentEl.querySelectorAll(".qh-dragging, .qh-drop-target").forEach((el) => el.removeClass("qh-dragging", "qh-drop-target"));
+      this.refreshContent();
+    });
+  }
 
   private renderPages(): void {
     const settings = this.plugin.settings;
@@ -504,12 +701,11 @@ export class HomeView extends ItemView {
       // Invalidate the former page immediately: slower sources must not flash through.
       this.gridEl.empty();
     }
-    const signature = JSON.stringify([settings.tabsEnabled, page.id, settings.pages.map((item) => [item.id, item.name])]);
+    const signature = JSON.stringify([this.editing, settings.tabsEnabled, page.id, settings.pages.map((item) => [item.id, item.name])]);
     if (signature === this.tabsSignature) return;
     this.tabsSignature = signature;
     this.tabsEl.empty();
-    this.tabsEl.toggleClass("is-off", !settings.tabsEnabled);
-    if (!settings.tabsEnabled) return;
+    this.contentEl.toggleClass("qh-editing", this.editing);
     const label = this.tabsEl.createSpan({ cls: "qh-sr-only", text: t("pages.label") });
     label.id = `${this.pageInstance}-label`;
     const list = this.tabsEl.createDiv({ cls: "qh-page-tabs", attr: { role: "tablist", "aria-labelledby": label.id } });
@@ -520,119 +716,118 @@ export class HomeView extends ItemView {
       if (focus) this.tabsEl.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus();
       void this.plugin.saveSettings({ rerender: false });
     };
-    settings.pages.forEach((item, index) => {
+    const shownPages = settings.tabsEnabled ? settings.pages : [currentPage(settings)];
+    shownPages.forEach((item, index) => {
       const selected = item.id === page.id;
       const button = list.createEl("button", { cls: "qh-page-tab", text: item.name || t("pages.default"),
         attr: { role: "tab", "aria-selected": String(selected), "aria-controls": `${this.pageInstance}-panel` } });
       button.id = `${this.pageInstance}-tab-${index}`;
       button.tabIndex = selected ? 0 : -1;
       button.addEventListener("click", () => select(item.id, true));
+      button.addEventListener("contextmenu", (event) => { event.preventDefault(); this.pageMenu(event, item.id); });
+      if (this.editing) this.enableDrag(button, button, "page", item.id, page.id);
       button.addEventListener("keydown", (event) => {
         let next: number;
-        if (event.key === "ArrowRight") next = (index + 1) % settings.pages.length;
-        else if (event.key === "ArrowLeft") next = (index - 1 + settings.pages.length) % settings.pages.length;
+        if (event.key === "ArrowRight") next = (index + 1) % shownPages.length;
+        else if (event.key === "ArrowLeft") next = (index - 1 + shownPages.length) % shownPages.length;
         else if (event.key === "Home") next = 0;
-        else if (event.key === "End") next = settings.pages.length - 1;
+        else if (event.key === "End") next = shownPages.length - 1;
         else return;
         event.preventDefault();
-        select(settings.pages[next].id, true);
+        select(shownPages[next].id, true);
       });
     });
     const add = this.tabsEl.createEl("button", { cls: "qh-icon-button qh-page-add" });
     setIcon(add, "plus"); hiddenLabel(add, t("pages.add"));
-    add.addEventListener("click", () => new NewPageModal(this.app, async (name) => {
-      const created = addPage(settings, name);
-      await this.plugin.saveSettings();
-      this.plugin.openSettings(created.id);
-    }).open());
+    add.addEventListener("click", () => this.addPage());
+    const options = this.tabsEl.createEl("button", { cls: "qh-icon-button qh-page-add" });
+    setIcon(options, "ellipsis"); hiddenLabel(options, t("pages.menu"));
+    options.addEventListener("click", (event) => this.pageMenu(event, page.id));
+    const tools = this.tabsEl.createDiv({ cls: "qh-layout-tools" });
+    if (this.editing) {
+      const library = tools.createEl("button", { cls: "qh-layout-action" });
+      setIcon(library.createSpan(), "plus"); library.createSpan({ text: t("library.title") });
+      library.addEventListener("click", () => this.openLibrary());
+    }
+    const edit = tools.createEl("button", { cls: this.editing ? "qh-layout-action" : "qh-icon-button qh-layout-button" });
+    setIcon(edit.createSpan(), this.editing ? "check" : "settings");
+    if (this.editing) edit.createSpan({ text: t("layout.done") });
+    else hiddenLabel(edit, isChinese() ? "布置主页" : "Customize Home");
+    edit.setAttr("aria-pressed", String(this.editing));
+    edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.shortcutDragging = false; this.dragFeedback.clear(); this.refreshContent(); });
   }
 
   private refreshContent(): void {
-    if (!this.gridEl) return;
+    if (!this.gridEl || this.dragging || this.shortcutDragging) return;
     this.renderPages();
     this.renderCreate();
     const generation = ++this.sectionsGeneration;
-    const providers = sortedProviders(findHomeProviders(this.app))
-      .filter(([id]) => moduleOptions(this.plugin.settings, id).visible);
-    const withProvider = new Set(providers.map(([id]) => id));
+    const page = currentPage(this.plugin.settings);
     const grid = this.gridEl;
-    // Build the new grid off-screen and swap it in once, so refreshes do not flicker.
-    // The first render swaps immediately so local cards show without waiting for slower sources.
     const next = this.contentEl.createDiv({ cls: "qh-grid" });
     next.id = `${this.pageInstance}-panel`;
-    if (this.plugin.settings.tabsEnabled) {
-      next.setAttr("role", "tabpanel");
-      next.setAttr("aria-labelledby", `${this.pageInstance}-tab-${this.plugin.settings.pages.indexOf(currentPage(this.plugin.settings))}`);
-      next.tabIndex = 0;
-    }
+    next.setAttr("role", "tabpanel");
+    const index = this.plugin.settings.tabsEnabled ? this.plugin.settings.pages.indexOf(page) : 0;
+    next.setAttr("aria-labelledby", `${this.pageInstance}-tab-${index}`);
+    next.tabIndex = 0;
     next.detach();
     const first = !grid.hasChildNodes();
-
-    if (moduleOptions(this.plugin.settings, "recent").visible) this.renderRecent(next);
-    let bookmarksReady: Promise<void> = Promise.resolve();
-    if (moduleOptions(this.plugin.settings, "bookmarks").visible) {
-      const bookmarksSlot = next.createDiv({ cls: "qh-slot" });
-      bookmarksReady = this.renderBookmarks(bookmarksSlot, generation);
-    }
-    const slots = providers.map(([id]) => ({ id, slot: next.createDiv({ cls: "qh-slot" }) }));
-    for (const plugin of KNOWN_PLUGINS) {
-      if (!moduleOptions(this.plugin.settings, plugin.id).visible || withProvider.has(plugin.id) || installState(this.app, plugin.id) !== "enabled") continue;
-      this.renderLegacy(next, plugin.id);
-    }
-    this.renderRecommendations(next);
-
+    if (moduleOptions(this.plugin.settings, "recent", page.id).visible) this.renderRecent(next);
     if (first) { grid.replaceWith(next); this.gridEl = next; }
-    void Promise.all([bookmarksReady, ...providers.map(async ([id, provider], index) => {
-      const result = await loadSections(provider);
+    void pluginModules(this.app, Object.keys(page.moduleOptions).map(moduleSource).filter((id): id is string => Boolean(id))).then((modules) => {
       if (generation !== this.sectionsGeneration) return;
-      this.fillSlot(slots[index].slot, id, result);
-    })]).then(() => {
-      if (generation !== this.sectionsGeneration) return;
-      if (this.plugin.settings.tabsEnabled && !next.querySelector(".qh-card")) {
+      const expanded = [...modules];
+      // Keep explicitly configured sections removable even when their source is disabled or absent.
+      for (const id of Object.keys(page.moduleOptions)) {
+        const source = moduleSource(id);
+        if (!source || !page.moduleOptions[id].visible || expanded.some((item) => item.id === id)) continue;
+        const base = modules.find((item) => item.sourceId === source);
+        if (base) expanded.push({ ...base, id, title: base.source, section: undefined,
+          status: base.section ? "unavailable" : base.status });
+      }
+      for (const item of expanded) {
+        if (!moduleOptions(this.plugin.settings, item.id, page.id).visible) continue;
+        if (!item.section && item.id === item.sourceId && Object.keys(page.moduleOptions).some((key) => moduleSource(key) === item.sourceId)) continue;
+        if ((item.status === "absent" || item.status === "disabled") && !Object.hasOwn(page.moduleOptions, item.id)) continue;
+        if (item.section) this.renderSection(next, item.sourceId!, {
+          ...item.section, items: item.section.items.slice(0, moduleOptions(this.plugin.settings, item.id, page.id).limit),
+        }, item.id);
+        else this.renderUnavailable(next, item);
+      }
+      if (moduleOptions(this.plugin.settings, "todo", page.id).visible) renderTodo(next, this.plugin, moduleOptions(this.plugin.settings, "todo", page.id).limit);
+      this.renderRecommendations(next);
+      for (const group of page.shortcutGroups) {
+        if (moduleOptions(this.plugin.settings, shortcutModuleId(group.id), page.id).visible) renderShortcutGroup(next, this.plugin, page.id, group, this.editing, this.dragFeedback, (active) => { this.shortcutDragging = active; });
+      }
+      const cards = Array.from(next.querySelectorAll<HTMLElement>(".qh-card"));
+      const ids = cards.map((card) => card.dataset.module!);
+      const ordered = orderModules(page, ids);
+      for (const id of ordered) {
+        const card = cards.find((item) => item.dataset.module === id)!;
+        this.decorateCard(card, id, page.id, ordered);
+        next.appendChild(card);
+        if (id === this.movedModule) { card.addClass("qh-just-moved"); this.movedModule = null; }
+      }
+      if (this.movedShortcut) {
+        next.querySelectorAll<HTMLElement>("[data-shortcut]").forEach((element) => {
+          if (element.dataset.shortcut === this.movedShortcut) element.addClass("qh-just-moved");
+        });
+        this.movedShortcut = null;
+      }
+      if (!cards.length) {
         const empty = next.createDiv({ cls: "qh-page-empty" });
         empty.createDiv({ text: t("pages.empty") });
-        const configure = empty.createEl("button", { cls: "qh-pill", text: t("pages.configure") });
-        configure.addEventListener("click", () => this.plugin.openSettings(currentPage(this.plugin.settings).id));
+        const configure = empty.createEl("button", { cls: "qh-pill", text: t("library.title") });
+        configure.addEventListener("click", () => this.openLibrary(page.id));
       }
-      if (first) return;
-      grid.replaceWith(next);
-      this.gridEl = next;
-    });
+      if (!first) { grid.replaceWith(next); this.gridEl = next; }
+    }).catch((error: unknown) => console.error("Qiaomu Home: could not load modules", error));
   }
 
-  private async renderBookmarks(bookmarksSlot: HTMLElement, generation: number): Promise<void> {
-    const bookmarks = await loadBookmarks(this.app, moduleOptions(this.plugin.settings, "bookmarks").limit);
-    if (generation !== this.sectionsGeneration || !bookmarks.length) return;
-    const card = bookmarksSlot.createDiv({ cls: "qh-card" });
-    const head = card.createDiv({ cls: "qh-card-head" });
-    setIcon(head.createSpan({ cls: "qh-card-icon" }), "bookmark");
-    head.createSpan({ cls: "qh-card-title", text: t("section.bookmarks") });
-    const list = card.createDiv({ cls: "qh-bookmarks" });
-    for (const bookmark of bookmarks) {
-      const button = list.createEl("button", { cls: "qh-bookmark" });
-      setIcon(button.createSpan(), bookmark.type === "search" ? "search" : "file-text");
-      button.createSpan({ text: bookmark.title });
-      button.addEventListener("click", () => {
-        if (bookmark.type === "search") this.openGlobalSearch(bookmark.value);
-        else if (bookmark.subpath) void this.app.workspace.openLinkText(`${bookmark.value}${bookmark.subpath}`, "", false);
-        else this.openPath(bookmark.value, false);
-      });
-    }
-  }
-
-  private fillSlot(slot: HTMLElement, id: string, result: SourceResult): void {
-    if (result.status === "error") {
-      const card = slot.createDiv({ cls: "qh-card qh-card-muted" });
-      card.createDiv({ cls: "qh-card-empty", text: t("error.source", { name: pluginName(this.app, id) }) });
-      return;
-    }
-    const limit = moduleOptions(this.plugin.settings, id).limit;
-    for (const section of result.sections) this.renderSection(slot, id, { ...section, items: section.items.slice(0, limit) });
-  }
-
-  private renderSection(parent: HTMLElement, sourceId: string, section: HomeSection): void {
+  private renderSection(parent: HTMLElement, sourceId: string, section: HomeSection, moduleId: string): void {
     const card = parent.createDiv({ cls: "qh-card" });
     card.dataset.source = sourceId;
+    card.dataset.module = moduleId;
     const head = card.createDiv({ cls: "qh-card-head" });
     const known = KNOWN_PLUGINS.find((plugin) => plugin.id === sourceId);
     setIcon(head.createSpan({ cls: "qh-card-icon" }), known?.icon ?? "puzzle");
@@ -679,13 +874,14 @@ export class HomeView extends ItemView {
     else hiddenLabel(button, action.label);
     button.addEventListener("click", (event) => {
       event.stopPropagation();
-      void Promise.resolve(action.run()).catch((error: unknown) => console.error("Qiaomu Home: action failed", error));
+      void Promise.resolve(action.run()).catch((error: unknown) => { console.error("Qiaomu Home: action failed", error); new Notice(error instanceof Error ? error.message : t("error.command")); });
     });
     button.addEventListener("keydown", (event) => event.stopPropagation());
   }
 
   private renderRecent(parent: HTMLElement): void {
     const card = parent.createDiv({ cls: "qh-card" });
+    card.dataset.module = "recent";
     const head = card.createDiv({ cls: "qh-card-head" });
     setIcon(head.createSpan({ cls: "qh-card-icon" }), "history");
     head.createSpan({ cls: "qh-card-title", text: t("section.recent") });
@@ -704,17 +900,19 @@ export class HomeView extends ItemView {
     }
   }
 
-  /** Missing/unsupported integration is not evidence that the installed release is outdated. */
-  private renderLegacy(parent: HTMLElement, id: string): void {
-    const known = KNOWN_PLUGINS.find((plugin) => plugin.id === id);
-    if (!known || !commandExists(this.app, known.openCommand)) return;
+  private renderUnavailable(parent: HTMLElement, item: HomeModule): void {
     const card = parent.createDiv({ cls: "qh-card qh-card-compact" });
+    card.dataset.module = item.id;
     const head = card.createDiv({ cls: "qh-card-head" });
-    setIcon(head.createSpan({ cls: "qh-card-icon" }), known.icon);
-    head.createSpan({ cls: "qh-card-title", text: localized(known.name) });
-    this.actionButton(head, { id: "open", label: t("legacy.open"), icon: "arrow-up-right", run: () => { runCommand(this.app, known.openCommand); } }, "qh-card-more", true);
+    setIcon(head.createSpan({ cls: "qh-card-icon" }), item.icon);
+    head.createSpan({ cls: "qh-card-title", text: item.title });
+    const known = KNOWN_PLUGINS.find((plugin) => plugin.id === item.sourceId);
+    if (known && commandExists(this.app, known.openCommand)) this.actionButton(head,
+      { id: "open", label: t("legacy.open"), icon: "arrow-up-right", run: () => { runCommand(this.app, known.openCommand); } }, "qh-card-more", true);
+    const message = item.status === "ready" ? "layout.emptySource" : item.status === "disabled" ? "library.disabled"
+      : item.status === "absent" ? "library.needsPlugin" : connectionState(this.app, item.sourceId!) === "incompatible" ? "legacy.incompatible" : "legacy.unavailable";
+    card.createDiv({ cls: "qh-card-empty", text: t(message) });
     this.actionButton(head, { id: "retry", label: t("legacy.retry"), icon: "refresh-cw", run: () => this.refreshContent() }, "qh-card-more", false);
-    card.createDiv({ cls: "qh-card-empty", text: t(connectionState(this.app, id) === "incompatible" ? "legacy.incompatible" : "legacy.unavailable") });
   }
 
   private renderRecommendations(parent: HTMLElement): void {
@@ -725,6 +923,7 @@ export class HomeView extends ItemView {
       .filter(({ plugin, state }) => state !== "enabled" && !settings.hiddenRecommendations.includes(plugin.id));
     if (!missing.length) return;
     const card = parent.createDiv({ cls: "qh-card qh-card-recommend" });
+    card.dataset.module = "recommendations";
     const head = card.createDiv({ cls: "qh-card-head" });
     setIcon(head.createSpan({ cls: "qh-card-icon" }), "sparkles");
     head.createSpan({ cls: "qh-card-title", text: t("section.recommend") });
