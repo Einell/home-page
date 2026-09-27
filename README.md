@@ -91,7 +91,7 @@ A calm start page for your notes, daily tasks, and everything you want to return
 
 ![快捷入口：平铺选择类型，再填写目标，按需自定义名称和图标](docs/images/shortcuts.png)
 
-先选类型，再填写目标；名称和图标需要时再展开。库内文件改名会更新目标，日记入口始终指向当天。网址默认使用简洁图标，不自动抓取网站 Logo；也可以为某个入口选「网站图标」，或填任意 Lucide 图标名。
+先选类型，再填写目标；名称和图标需要时再展开。库内文件改名会更新目标，日记入口始终指向当天。网址入口自动显示网站图标（取不到时退回地球图标）；也可以改用内置图标，或填任意 Lucide 图标名。
 
 ### 一张壁纸，一句属于你的话
 
@@ -138,7 +138,7 @@ Home 独立可用。装上相应的乔木插件后，主页还能显示它们的
 
 - **无需账号，没有遥测。** 设置保存在本库插件数据中，待办和快速记录写入 Markdown。
 - **搜索在本地执行。** 只有主动调用 Agent 时，问题才交给它按你的配置处理。
-- **外部图片按需加载。** 壁纸来自 `images.unsplash.com`；自选 Unsplash 搜索使用 `api.unsplash.com`，密钥存在 Obsidian 密钥库。关于页二维码来自 `radio.qiaomu.ai`。只有你为快捷入口选择「网站图标」时，才会把该网址的域名发给 `icons.duckduckgo.com` 取图标。
+- **外部图片按需加载。** 壁纸来自 `images.unsplash.com`；自选 Unsplash 搜索使用 `api.unsplash.com`，密钥存在 Obsidian 密钥库。关于页二维码来自 `radio.qiaomu.ai`。网址快捷入口的图标从 `icons.duckduckgo.com` 获取，只发送网站域名；改用内置图标后不再请求。
 - **联网卡片需要你先设置。** 天气卡片在你选择城市后才向 Open-Meteo 查询；日程卡片只有填写订阅地址时才请求该地址，本地 .ics 文件不联网。白噪音在本机生成。
 - **GitHub 与社区列表按需联网。** 连接 GitHub 后，GitHub 待办卡片用你的令牌请求 `api.github.com`（每 5 分钟最多一次）；「添加内容 → 社区」只在打开该分类时从 `raw.githubusercontent.com` 读取社区组件列表。
 - **插件安装由你决定。** 推荐模块只打开市场或设置入口，不会自动安装、启用其他插件。
@@ -210,7 +210,7 @@ The screenshots above are actual desktop UI with sample content, a custom headin
 
 No account or telemetry. Settings stay in the vault's plugin data; tasks and captures remain editable Markdown. Search runs locally. Text is handed to Agent only when you explicitly invoke it, and Agent then follows its own configuration.
 
-After you connect GitHub, the GitHub card calls `api.github.com` with your token (at most every five minutes); the Community category in Add cards fetches its list from `raw.githubusercontent.com` only when opened. The weather card queries Open-Meteo only after you choose a city; the agenda card fetches a subscription URL only if you enter one (local .ics files stay offline). Wallpaper images load from `images.unsplash.com`. A shortcut's site icon is fetched from `icons.duckduckgo.com` (sending only the host name) only if you choose “Site icon” for that shortcut. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
+After you connect GitHub, the GitHub card calls `api.github.com` with your token (at most every five minutes); the Community category in Add cards fetches its list from `raw.githubusercontent.com` only when opened. The weather card queries Open-Meteo only after you choose a city; the agenda card fetches a subscription URL only if you enter one (local .ics files stay offline). Wallpaper images load from `images.unsplash.com`. Website shortcuts show the site's icon, fetched from `icons.duckduckgo.com` with only the host name; pick a built-in icon to avoid the request. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
 
 Desktop behavior has been checked in real Obsidian test vaults. Mobile has not been verified on a physical device. Daily tasks fall back to a fixed task note when the core Daily Notes plugin is disabled. If another plugin manages your startup page or new tabs, configure only one to own that entry point.
 

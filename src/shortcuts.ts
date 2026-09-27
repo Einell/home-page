@@ -7,7 +7,7 @@ export const SHORTCUT_ICONS = ["file-text", "folder", "globe", "link", "book-ope
 export const shortcutModuleId = (id: string): string => `shortcut:${id}`;
 /** "favicon" shows the website's own icon; any other value is a Lucide icon id. */
 export const FAVICON = "favicon";
-export const defaultShortcutIcon = (kind: ShortcutKind): string => kind === "daily" ? "calendar" : kind === "url" ? "globe" : kind === "command" ? "terminal-square" : kind === "folder" ? "folder" : "file-text";
+export const defaultShortcutIcon = (kind: ShortcutKind): string => kind === "daily" ? "calendar" : kind === "url" ? FAVICON : kind === "command" ? "terminal-square" : kind === "folder" ? "folder" : "file-text";
 export const validIconName = (value: unknown): value is string => typeof value === "string" && (value === FAVICON || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) && value.length <= 40;
 /** Websites, plus obsidian:// links (to another vault, a note, or a plugin's URI action). */
 export function linkTarget(value: string): string | null {
@@ -74,7 +74,7 @@ export function moveShortcutGroup(settings: HomeSettings, from: string, to: stri
 export function defaultHomeShortcuts(chinese: boolean): ShortcutGroup {
   return { id: "home-shortcuts", name: chinese ? "常用入口" : "Shortcuts", items: [
     {id:"daily", kind:"daily", target:"today", name:chinese?"今日日记":"Daily note", icon:"calendar"},
-    {id:"x", kind:"url", target:"https://x.com/", name:"X", icon:"globe"},
-    {id:"google", kind:"url", target:"https://www.google.com/", name:chinese?"谷歌":"Google", icon:"globe"},
+    {id:"x", kind:"url", target:"https://x.com/", name:"X", icon:FAVICON},
+    {id:"google", kind:"url", target:"https://www.google.com/", name:chinese?"谷歌":"Google", icon:FAVICON},
   ]};
 }

@@ -132,6 +132,14 @@ describe("shortcuts and settings", () => {
     ] }]);
     expect(group.items.map(item => item.id)).toEqual(["c", "u"]);
   });
+  it("gives website shortcuts site icons, turning old globe icons over once", () => {
+    const saved = { homeShortcutsSeeded: true, pages: [{ id: "home", name: "", moduleOptions: {}, moduleOrder: [], shortcutGroups: [{ id: "g", name: "", items: [
+      { id: "a", kind: "url", target: "https://x.com/", name: "", icon: "globe" }, { id: "b", kind: "url", target: "https://a.com/", name: "", icon: "star" }] }] }] };
+    const once = normalizeSettings(saved);
+    expect(once.pages[0].shortcutGroups[0].items.map(item => item.icon)).toEqual(["favicon", "star"]);
+    once.pages[0].shortcutGroups[0].items[0].icon = "globe";
+    expect(normalizeSettings(JSON.parse(JSON.stringify(once))).pages[0].shortcutGroups[0].items[0].icon).toBe("globe");
+  });
   it("validates the new settings", () => {
     const settings = normalizeSettings({ todoCarryDays: 99, captureFormat: "time", recentPinned: ["a.md", "a.md"], reviewSeen: { "a.md": "2026-09-27", "b.md": "bad", __proto__: "x" }, openInNewTab: true });
     expect(settings.todoCarryDays).toBe(7);

@@ -5,7 +5,7 @@ import { calendarUrl, clockMinutes, validZone, type WeatherLocation, type ZoneEn
 import { PRODUCTIVITY_MODULES } from "./productivity-catalog";
 import { normalizeFocus, type FocusSession } from "./productivity-data";
 import { isChinese } from "./i18n";
-import { defaultHomeShortcuts, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
+import { defaultHomeShortcuts, FAVICON, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
 export type WallpaperRotation = "daily" | "open" | "fixed";
 export type Headline = "clock" | "custom";
@@ -86,6 +86,8 @@ export interface HomeSettings {
   activePageId: string;
   homePageId: string;
   homeShortcutsSeeded: boolean;
+  /** 0.5.0 turned website shortcuts that still had the generic globe into site icons, once. */
+  shortcutFavicons: boolean;
   pages: HomePage[];
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
@@ -186,6 +188,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   activePageId: "home",
   homePageId: "home",
   homeShortcutsSeeded: true,
+  shortcutFavicons: true,
   pages: (["home", "focus", "knowledge", "reading", "entertainment", "explore"] as const).map(presetPage),
   showDaily: true,
   captureTarget: "inbox",
@@ -337,6 +340,9 @@ export function normalizeSettings(saved: unknown): HomeSettings {
   const fresh = Object.keys(raw).length === 0;
   const pages = fresh ? structuredClone(defaults.pages) : normalizePages(raw, modules);
   const homePageId = pages.some(page => page.id === raw.homePageId) ? raw.homePageId as string : (pages.find(page => page.id === "home")?.id ?? pages[0].id);
+  if (!fresh && raw.shortcutFavicons !== true) {
+    for (const page of pages) for (const group of page.shortcutGroups) for (const item of group.items) if (item.kind === "url" && item.icon === "globe") item.icon = FAVICON;
+  }
   if (!fresh && raw.homeShortcutsSeeded !== true) {
     const home = pages.find(page => page.id === homePageId)!;
     const defaults = defaultHomeShortcuts(isChinese());
@@ -374,6 +380,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     tabsEnabled: fresh ? true : raw.tabsEnabled === true,
     homePageId,
     homeShortcutsSeeded: true,
+    shortcutFavicons: true,
     activePageId: pages.some((page) => page.id === raw.activePageId) ? raw.activePageId as string : pages[0].id,
     pages,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
