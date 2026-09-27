@@ -13,13 +13,15 @@ const pending = new WeakMap<HTMLElement, Set<() => void>>();
  * field and the value stays so the user can fix it.
  */
 export function autoSave(root: HTMLElement, setting: Setting, field: HTMLInputElement | HTMLTextAreaElement, commit: (value: string) => unknown): void {
-  let saved = field.value, busy = false, timer = 0;
+  let saved = field.value, busy = false, queued = false, timer = 0;
   const status = setting.descEl.createDiv({ cls: "qh-save-state" });
   status.setAttr("aria-live", "polite");
   const clear = () => { status.setText(""); status.removeClass("is-error", "is-saved"); field.removeClass("is-invalid"); field.removeAttribute("aria-invalid"); };
   const flush = () => {
     const value = field.value;
-    if (value === saved || busy) return;
+    // A blur or close during an async save must preserve the latest edit, including a revert.
+    if (busy) { queued = true; return; }
+    if (value === saved) return;
     busy = true;
     window.clearTimeout(timer);
     void Promise.resolve().then(() => commit(value)).then(result => {
@@ -31,7 +33,10 @@ export function autoSave(root: HTMLElement, setting: Setting, field: HTMLInputEl
       clear();
       status.setText(error instanceof Error && error.message ? error.message : L("保存失败，请重试", "Could not save; try again"));
       status.addClass("is-error"); field.addClass("is-invalid"); field.setAttr("aria-invalid", "true");
-    }).finally(() => { busy = false; });
+    }).finally(() => {
+      busy = false;
+      if (queued) { queued = false; flush(); }
+    });
   };
   field.addEventListener("input", clear);
   field.addEventListener("blur", flush);
