@@ -9,6 +9,25 @@ import { DEFAULT_SETTINGS, normalizeSettings, type HomeSettings } from "./settin
 import { HomeSettingTab } from "./settings-tab";
 import { HOME_VIEW_TYPE, HomeView } from "./view";
 import { WallpaperService } from "./wallpaper/service";
+import { currentFocusText } from "./daily-focus";
+
+/** Two soft tones, synthesized so no audio file ships with the plugin. */
+function playChime(): void {
+  try {
+    const context = new AudioContext();
+    [660, 880].forEach((frequency, index) => {
+      const oscillator = context.createOscillator(), gain = context.createGain();
+      const start = context.currentTime + index * 0.22;
+      oscillator.type = "sine"; oscillator.frequency.value = frequency;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.18, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.6);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start(start); oscillator.stop(start + 0.65);
+    });
+    window.setTimeout(() => void context.close(), 1500);
+  } catch { /* audio unavailable */ }
+}
 
 /** How long to wait after a layout change before claiming an empty tab, so a plugin that is opening its own view wins. */
 const CLAIM_DELAY_MS = 40;
@@ -31,6 +50,12 @@ export default class QiaomuHomePlugin extends Plugin {
     this.register(() => this.taskIndex.clear());
     this.register(() => this.ambient.destroy());
     this.registerInterval(window.setInterval(() => this.completeFocusIfDue(), 1000));
+    // A note removed from "Recently opened" comes back once it is opened again.
+    this.registerEvent(this.app.workspace.on("file-open", (file) => {
+      if (!file || !this.settings.recentHidden.includes(file.path)) return;
+      this.settings.recentHidden = this.settings.recentHidden.filter((path) => path !== file.path);
+      void this.saveSettings({ rerender: false });
+    }));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       let todoRenamed = false;
       const renamed = (path: string) => path === oldPath || path.startsWith(`${oldPath}/`) ? file.path + path.slice(oldPath.length) : path;
@@ -39,6 +64,12 @@ export default class QiaomuHomePlugin extends Plugin {
         if (options.paths) { const next = options.paths.map(renamed); if (next.some((path, index) => path !== options.paths![index])) { options.paths = next; todoRenamed = true; } }
       }
       for (const key of ["captureInboxPath", "reviewFolder", "createFolder"] as const) if (this.settings[key] && renamed(this.settings[key]) !== this.settings[key]) { this.settings[key] = renamed(this.settings[key]); todoRenamed = true; }
+      for (const key of ["recentPinned", "recentHidden", "reviewExcluded"] as const) {
+        const next = this.settings[key].map(renamed);
+        if (next.some((path, index) => path !== this.settings[key][index])) { this.settings[key] = next; todoRenamed = true; }
+      }
+      const seen = Object.entries(this.settings.reviewSeen);
+      if (seen.some(([path]) => renamed(path) !== path)) { this.settings.reviewSeen = Object.fromEntries(seen.map(([path, day]) => [renamed(path), day])); todoRenamed = true; }
       if (this.settings.todoPath === oldPath || this.settings.todoPath.startsWith(`${oldPath}/`)) {
         this.settings.todoPath = file.path + this.settings.todoPath.slice(oldPath.length); todoRenamed = true;
       }
@@ -77,20 +108,28 @@ export default class QiaomuHomePlugin extends Plugin {
     if (this.completingFocus || !session.endAt || Date.now() < session.endAt) return;
     this.completingFocus = true;
     const endAt = session.endAt, minutes = session.durationMinutes;
+    const chinese = isChinese();
+    const recent = Date.now() - endAt < 10 * 60000;
+    if (recent && this.settings.focusSound) playChime();
+    if (session.kind === "break") {
+      // A break is not counted; Home is ready for the next focus session of the chosen length.
+      this.settings.focusSession = { ...session, kind: "focus", durationMinutes: session.focusMinutes, endAt: 0, remainingMs: session.focusMinutes * 60000 };
+      if (recent) new Notice(chinese ? "休息结束，开始下一段专注吧" : "Break over. Ready for the next session.");
+      void this.saveSettings({ rerender: false }).finally(() => { this.completingFocus = false; });
+      return;
+    }
     this.settings.focusSession = { ...session, endAt: 0, remainingMs: 0 };
     // Count the session on the day it ended.
     const day = (moment as unknown as (time: number) => { format(pattern: string): string })(endAt).format("YYYY-MM-DD");
     const stats = this.settings.focusStats.day === day ? this.settings.focusStats : { day, count: 0, minutes: 0 };
     this.settings.focusStats = { day, count: stats.count + 1, minutes: stats.minutes + minutes };
-    const chinese = isChinese();
-    const recent = Date.now() - endAt < 10 * 60000;
     if (recent) new Notice(chinese ? `专注 ${minutes} 分钟完成，休息一下吧` : `${minutes}-minute focus complete. Take a break.`);
     void (async () => {
-      await this.saveSettings();
+      await this.saveSettings({ rerender: false });
       if (!this.settings.focusLog) return;
       const format = (time: number) => (moment as unknown as (time: number) => { format(pattern: string): string })(time).format("HH:mm");
-      const focus = this.settings.dailyFocus.text && this.settings.dailyFocus.day === (moment as unknown as () => { format(pattern: string): string })().format("YYYY-MM-DD") ? ` · ${this.settings.dailyFocus.text}` : "";
-      await appendToDaily(this.app, `- ${format(endAt - minutes * 60000)}–${format(endAt)} ${chinese ? `专注 ${minutes} 分钟` : `Focused ${minutes} min`}${focus}`);
+      const label = session.label || await currentFocusText(this);
+      await appendToDaily(this.app, `- ${format(endAt - minutes * 60000)}–${format(endAt)} ${chinese ? `专注 ${minutes} 分钟` : `Focused ${minutes} min`}${label ? ` · ${label}` : ""}`);
     })().catch((error: unknown) => new Notice(chinese ? `专注记录未写入：${error instanceof Error ? error.message : String(error)}` : `Focus log not written: ${error instanceof Error ? error.message : String(error)}`))
       .finally(() => { this.completingFocus = false; });
   }

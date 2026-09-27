@@ -16,7 +16,8 @@ export function prepareFuzzySearch(query: string) {
 }
 export async function requestUrl(): Promise<never> { throw new Error("network disabled in tests"); }
 export class TFile {}
-export function moment() { return { format: (pattern: string) => pattern.replace("YYYY", "2026").replace("MM", "09").replace("DD", "26") }; }
+const day = (date: number) => ({ format: (pattern: string) => pattern.replace("YYYY", "2026").replace("MM", "09").replace("DD", String(date).padStart(2, "0")) });
+export function moment() { return { ...day(26), subtract: (n: number) => day(26 - n) }; }
 export function normalizePath(path: string): string { return path.replace(/\/+/g, "/").replace(/^\/|\/$/g, ""); }
 export class MarkdownView {}
 export class Modal { constructor(public app?: unknown) {} }

@@ -2,12 +2,17 @@ import { PRODUCTIVITY_MODULES, type ProductivityId } from "./productivity-catalo
 import { renderProductivity, paintFocus } from "./productivity-ui";
 import { renderBeginnerPlugins } from "./beginner-ui";
 import { renderTodo } from "./todo-ui";
-import { dailyExcerpt, recentlyModified, reviewCandidates } from "./home-native-modules";
+import { dailyExcerpt, excerptLines, inboxItems, pickReview, recentlyModified, removeInboxItem, restoreInboxItem, reviewCandidates } from "./home-native-modules";
 import { DISCOVERY_MODULES, defaultSites, discoveryUrl, customSearchSites, type DiscoveryModuleId } from "./discovery";
 import { EXTRA_MODULES, type ExtraId } from "./extra-catalog";
 import { renderExtra } from "./extra-ui";
 import { INTEGRATIONS, renderIntegration, renderPluginGuide, type IntegrationId } from "./integrations";
-import { cardAction, fieldRow } from "./card-ui";
+import { cardAction, fieldRow, undoNotice } from "./card-ui";
+import { MAX_FOCUS, readFocus, writeFocus } from "./daily-focus";
+import { completeTodo, reopenTodo, taskDisplay } from "./todo-data";
+import { update, editorFor } from "./todo-files";
+import { addTodoBlock } from "./todo-ui";
+import { openFromHome } from "./open";
 import { renderGithubInbox } from "./github";
 import { isChinese } from "./i18n";
 import { DragFeedback, dropAfter } from "./drag-feedback";
@@ -21,7 +26,7 @@ import {
 } from "./ecosystem";
 import { greeting, relativeTime, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { currentPage, localDay, moduleOptions, moduleSource, type HomeSettings } from "./settings";
+import { currentPage, localDay, moduleOptions, moduleSource, type FocusItem, type HomeSettings } from "./settings";
 import { addPage, addPresetPage, duplicatePage, movePage, removePage, reorderPage } from "./pages";
 import { orderModules, reorderModule, setModule } from "./layout";
 import { pluginModules, type HomeModule } from "./module-catalog";
@@ -29,13 +34,16 @@ import { ModuleLibrary, ModuleOptionsModal, MoveModuleModal } from "./module-lib
 import { NewPageModal, DeletePageModal } from "./page-dialogs";
 import { connectionSnapshot, connectionsChanged, connectionState } from "./connections";
 import { HOME_CHANGED_EVENT, findHomeProviders, type HomeAction, type HomeItem, type HomeProvider, type HomeSection } from "./protocol/qiaomu-home";
-import { SEARCHABLE, noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
+import { noteNameFromQuery, rankNotes, type NoteCandidate } from "./search";
 import { loadActions, searchProvider } from "./sources";
-import { captureNote, ensureParent, openTodayNote, todayPath } from "./today";
+import { captureNote, dailyMatcher, ensureParent, ensureTodayNote, todayPath } from "./today";
 
-export const HOME_VIEW_TYPE = "qiaomu-home";
+import { HOME_VIEW_TYPE, bindOpen, openPathFromHome } from "./open";
+export { HOME_VIEW_TYPE };
 
 const NOTE_RESULTS = 6;
+/** What the Recent card lists: notes and documents, not images or media that happened to be opened. */
+const RECENT_TYPES = new Set(["md", "canvas", "base", "pdf"]);
 const PROVIDER_RESULTS = 4;
 
 /** One selectable row in the search dropdown. */
@@ -109,6 +117,22 @@ export class HomeView extends ItemView {
   private lastDay = localDay();
   private discoveryDrafts = new Map<string, string>();
   private readonly refreshSoon = debounce(() => this.refreshContent(), 150, true);
+  /** A refresh was requested while Home was hidden or the user was composing text; run it when that ends. */
+  private stale = false;
+  private composing = false;
+  private wallpaperSignature = "";
+
+  /** Vault and plugin events land here: a hidden Home only remembers that it is out of date. */
+  requestRefresh(): void {
+    if (!this.contentEl.isConnected || !this.containerEl.isShown() || this.composing) { this.stale = true; return; }
+    this.refreshSoon();
+  }
+
+  private catchUp(): void {
+    if (!this.stale || !this.containerEl.isShown() || this.composing) return;
+    this.stale = false;
+    this.refreshSoon();
+  }
 
   constructor(leaf: WorkspaceLeaf, private plugin: QiaomuHomePlugin) {
     super(leaf);
@@ -136,12 +160,16 @@ export class HomeView extends ItemView {
     this.gridEl = this.pageEl.createDiv({ cls: "qh-grid" });
     this.buildCorner(root.createDiv({ cls: "qh-corner" }));
 
-    this.registerEvent((this.app.workspace as Events).on(HOME_CHANGED_EVENT, () => this.refreshSoon()));
-    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => { if (leaf === this.leaf) this.refreshSoon(); }));
-    const refreshTodo = debounce(() => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh"))), 300, true);
-    this.register(() => refreshTodo.cancel());
+    this.registerEvent((this.app.workspace as Events).on(HOME_CHANGED_EVENT, () => this.requestRefresh()));
+    this.registerEvent(this.app.workspace.on("active-leaf-change", (leaf) => { if (leaf === this.leaf) { this.stale = true; this.catchUp(); } }));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.catchUp()));
+    this.registerDomEvent(root, "compositionstart", () => { this.composing = true; });
+    this.registerDomEvent(root, "compositionend", () => { this.composing = false; window.setTimeout(() => this.catchUp(), 0); });
+    // The Todo card listens for the notes it reads; other files never make it re-read.
+    const refreshTodo = (path?: string) => this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new CustomEvent("qh-todo-refresh", { detail: { path } })));
     this.registerEvent(this.app.vault.on("modify", file => {
-      if (this.plugin.settings.todoDaily || file.path === this.plugin.settings.todoPath) refreshTodo();
+      if (!this.containerEl.isShown()) { this.stale = true; return; }
+      refreshTodo(file.path);
       const page = currentPage(this.plugin.settings);
       if (file instanceof TFile && file.extension === "md" &&
         (moduleOptions(this.plugin.settings, "daily-preview", page.id).visible ||
@@ -149,18 +177,18 @@ export class HomeView extends ItemView {
           moduleOptions(this.plugin.settings, "inbox-preview", page.id).visible ||
           Object.keys(PRODUCTIVITY_MODULES).some(id => moduleOptions(this.plugin.settings, id, page.id).visible) ||
           (Object.keys(EXTRA_MODULES) as ExtraId[]).some(id => EXTRA_MODULES[id].vault && moduleOptions(this.plugin.settings, id, page.id).visible) ||
-          ["kanban-boards", "excalidraw-drawings"].some(id => moduleOptions(this.plugin.settings, id, page.id).visible))) this.refreshSoon();
+          ["kanban-boards", "excalidraw-drawings"].some(id => moduleOptions(this.plugin.settings, id, page.id).visible))) this.requestRefresh();
     }));
-    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (this.plugin.settings.todoDaily || info.file?.path === this.plugin.settings.todoPath) refreshTodo(); }));
-    this.registerEvent(this.app.metadataCache.on("resolved", () => this.refreshSoon()));
-    // Property-driven cards (habits, tags) must render after the cache has the new frontmatter, not on the raw modify.
+    this.registerEvent(this.app.workspace.on("editor-change", (_editor, info) => { if (info.file && this.containerEl.isShown()) refreshTodo(info.file.path); }));
+    this.registerEvent(this.app.metadataCache.on("resolved", () => this.requestRefresh()));
+    // Property-driven cards (habits, focus, tags) must render after the cache has the new frontmatter, not on the raw modify.
     this.registerEvent(this.app.metadataCache.on("changed", () => {
       const page = currentPage(this.plugin.settings);
-      if (["habit-checkin", "tag-cloud", "kanban-boards", "excalidraw-drawings", "spaced-review"].some(id => moduleOptions(this.plugin.settings, id, page.id).visible)) this.refreshSoon();
+      if (["habit-checkin", "daily-focus", "tag-cloud", "kanban-boards", "excalidraw-drawings", "spaced-review"].some(id => moduleOptions(this.plugin.settings, id, page.id).visible)) this.requestRefresh();
     }));
-    this.registerEvent(this.app.vault.on("rename", () => this.refreshSoon()));
-    this.registerEvent(this.app.vault.on("delete", () => this.refreshSoon()));
-    this.registerEvent(this.app.vault.on("create", () => this.refreshSoon()));
+    this.registerEvent(this.app.vault.on("rename", () => this.requestRefresh()));
+    this.registerEvent(this.app.vault.on("delete", () => this.requestRefresh()));
+    this.registerEvent(this.app.vault.on("create", () => this.requestRefresh()));
     this.registerDomEvent(root.ownerDocument, "pointerdown", (event) => {
       const target = event.target as Node | null;
       if (target && (this.resultsEl.contains(target) || target === this.inputEl)) return;
@@ -178,7 +206,7 @@ export class HomeView extends ItemView {
       const next = connectionSnapshot(this.app);
       if (!connectionsChanged(this.connections, next)) return;
       this.connections = next;
-      this.refreshSoon();
+      this.requestRefresh();
       if (this.inputEl.value.trim() && this.inputEl.getAttr("aria-expanded") === "true") this.onQuery();
     }, 1500));
 
@@ -200,9 +228,13 @@ export class HomeView extends ItemView {
 
   /** Re-renders everything that depends on settings. Called by the plugin after settings change. */
   render(): void {
+    // A Home tab restored in the background has a view object but has not been opened (built) yet.
+    if (!this.headEl) return;
     this.renderHead();
     this.refreshContent();
-    void this.renderPhoto();
+    // Card-level saves rerender often; the wallpaper only repaints when its settings changed.
+    const wallpaper = JSON.stringify(this.plugin.settings.wallpaper);
+    if (wallpaper !== this.wallpaperSignature) void this.renderPhoto();
   }
 
   focusSearch(): void {
@@ -218,7 +250,7 @@ export class HomeView extends ItemView {
 
   // Header -----------------------------------------------------------------
 
-  refreshHeadline(): void { this.renderHead(); }
+  refreshHeadline(): void { if (this.headEl) this.renderHead(); }
 
   private renderHead(): void {
     this.headEl.empty();
@@ -238,11 +270,11 @@ export class HomeView extends ItemView {
   private tick(): void {
     paintFocus(this.contentEl, this.plugin);
     const now = new Date();
-    if (this.lastDay !== localDay(now)) { this.lastDay = localDay(now); this.refreshSoon(); }
+    if (this.lastDay !== localDay(now)) { this.lastDay = localDay(now); this.requestRefresh(); }
     const minute = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
     if (minute === this.lastMinute) return;
     this.lastMinute = minute;
-    this.contentEl.querySelectorAll(".qh-todo").forEach(card => card.dispatchEvent(new Event("qh-todo-refresh")));
+    this.catchUp();
     this.contentEl.querySelectorAll(".qh-card[data-tick]").forEach(card => card.dispatchEvent(new Event("qh-minute")));
     if (!this.timeEl || !this.subEl) return;
     this.timeEl.setText(minute);
@@ -253,7 +285,9 @@ export class HomeView extends ItemView {
   // Wallpaper --------------------------------------------------------------
 
   async renderPhoto(): Promise<void> {
+    if (!this.creditEl) return;
     const generation = ++this.photoGeneration;
+    this.wallpaperSignature = JSON.stringify(this.plugin.settings.wallpaper);
     const shown = await this.plugin.wallpaper.resolve(this.contentEl.ownerDocument.defaultView ?? window);
     if (generation !== this.photoGeneration) return;
     const root = this.contentEl;
@@ -472,7 +506,19 @@ export class HomeView extends ItemView {
     if (commandExists(this.app, "global-search:open")) {
       this.addRow(commands, { icon: "text-search", title: t("search.fullText", { q: query }), run: () => this.openGlobalSearch(query) });
     }
+    // The web: the first site highlighted on the Multi-search card, so the top box and the card agree.
+    const web = this.webSite();
+    if (web) this.addRow(commands, { icon: "globe", title: isChinese() ? `用 ${web.zh} 搜索「${query}」` : `Search ${web.en} for “${query}”`,
+      run: () => { window.open(discoveryUrl(web, query), "_blank", "noopener,noreferrer"); } });
     this.setActiveRow(0);
+  }
+
+  private webSite() {
+    const base = DISCOVERY_MODULES["multi-search"];
+    const options = moduleOptions(this.plugin.settings, "multi-search");
+    const sites = [...base.sites, ...customSearchSites(options.customSites ?? [])].filter((site) => site.search);
+    const selected = options.sites ?? defaultSites(base.sites);
+    return sites.find((site) => selected.includes(site.id)) ?? sites[0];
   }
 
   private addRow(group: HTMLElement, row: { icon: string; title: string; detail?: string; hint?: string; run(newTab: boolean): void }): void {
@@ -502,8 +548,12 @@ export class HomeView extends ItemView {
   private openPath(path: string, newTab: boolean): void {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return;
-    const leaf = newTab ? this.app.workspace.getLeaf("tab") : this.leaf;
+    const leaf = newTab || this.plugin.settings.openInNewTab ? this.app.workspace.getLeaf("tab") : this.leaf;
     void leaf.openFile(file, { active: true });
+  }
+
+  private openNote(card: HTMLElement, path: string, event?: MouseEvent | KeyboardEvent | null, line?: number): void {
+    void openPathFromHome(this.plugin, card, path, event, line).catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error)));
   }
 
   private openGlobalSearch(query: string): void {
@@ -804,8 +854,8 @@ export class HomeView extends ItemView {
 
   private refreshContent(force = false): void {
     if (!this.gridEl || this.dragging || this.shortcutDragging) return;
-    const focused = this.contentEl.ownerDocument.activeElement;
-    if (!force && focused && this.gridEl.contains(focused) && focused.matches("input:not([type=checkbox]), textarea")) return;
+    if (!force && this.composing) { this.stale = true; return; }
+    this.stale = false;
     this.renderPages();
     this.renderCreate();
     const generation = ++this.sectionsGeneration;
@@ -886,8 +936,35 @@ export class HomeView extends ItemView {
         const configure = empty.createEl("button", { cls: "qh-pill", text: t("library.title") });
         configure.addEventListener("click", () => this.openLibrary(page.id));
       }
-      if (!first) { grid.replaceWith(next); this.gridEl = next; }
+      if (!first) {
+        const restore = this.captureFocus(grid);
+        grid.replaceWith(next); this.gridEl = next;
+        restore(next);
+      }
     }).catch((error: unknown) => console.error("Qiaomu Home: could not load modules", error));
+  }
+
+  /**
+   * A rebuilt grid replaces the one the user may be typing in. Remember the focused field (card + position),
+   * its text and caret, and put them back in the matching field of the new grid.
+   */
+  private captureFocus(grid: HTMLElement): (next: HTMLElement) => void {
+    const focused = this.contentEl.ownerDocument.activeElement;
+    if (!(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) || !grid.contains(focused) || focused.type === "checkbox") return () => {};
+    const card = focused.closest<HTMLElement>(".qh-card");
+    if (!card) return () => {};
+    const fields = Array.from(card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input:not([type=checkbox]), textarea"));
+    const index = fields.indexOf(focused), value = focused.value;
+    const start = focused.selectionStart, end = focused.selectionEnd;
+    const module = card.dataset.module;
+    return (next) => {
+      const target = Array.from(next.querySelectorAll<HTMLElement>(".qh-card")).find(entry => entry.dataset.module === module);
+      const field = target?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input:not([type=checkbox]), textarea")[index];
+      if (!field || field.disabled) return;
+      if (field.value !== value) { field.value = value; field.dispatchEvent(new Event("input")); }
+      field.focus({ preventScroll: true });
+      try { if (start !== null && end !== null) field.setSelectionRange(start, end); } catch { /* type=search etc. */ }
+    };
   }
 
   private renderSection(parent: HTMLElement, sourceId: string, section: HomeSection, moduleId: string): void {
@@ -907,7 +984,7 @@ export class HomeView extends ItemView {
     for (const item of section.items) this.renderItem(list, item);
   }
 
-  private renderItem(list: HTMLElement, item: HomeItem): void {
+  private renderItem(list: HTMLElement, item: HomeItem, extra: { open?(event: MouseEvent | KeyboardEvent): void; menu?(menu: Menu): void } = {}): HTMLElement {
     const row = list.createDiv({ cls: "qh-item" });
     row.tabIndex = 0;
     row.setAttr("role", "button");
@@ -928,9 +1005,19 @@ export class HomeView extends ItemView {
       bar.createDiv({ cls: "qh-progress-fill" }).style.width = `${Math.round(item.progress * 100)}%`;
     }
     for (const action of item.actions ?? []) this.actionButton(row, action, "qh-item-action", false);
-    const open = () => void Promise.resolve(item.open()).catch((error: unknown) => console.error("Qiaomu Home: open failed", error));
-    row.addEventListener("click", open);
-    row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(); } });
+    const open = (event: MouseEvent | KeyboardEvent) => {
+      if (extra.open) { extra.open(event); return; }
+      void Promise.resolve(item.open()).catch((error: unknown) => console.error("Qiaomu Home: open failed", error));
+    };
+    bindOpen(row, open);
+    row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(event); } });
+    if (extra.menu) row.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+      const menu = new Menu();
+      extra.menu!(menu);
+      menu.showAtMouseEvent(event);
+    });
+    return row;
   }
 
   private actionButton(parent: HTMLElement, action: HomeAction, cls: string, withText: boolean): void {
@@ -951,18 +1038,32 @@ export class HomeView extends ItemView {
     const head = card.createDiv({ cls: "qh-card-head" });
     setIcon(head.createSpan({ cls: "qh-card-icon" }), "history");
     head.createSpan({ cls: "qh-card-title", text: t("section.recent") });
-    const files = this.app.workspace.getLastOpenFiles()
+    const settings = this.plugin.settings;
+    const pinned = settings.recentPinned, hidden = new Set(settings.recentHidden);
+    const paths = [...pinned, ...this.app.workspace.getLastOpenFiles().filter((path) => !pinned.includes(path) && !hidden.has(path))];
+    const files = paths
       .map((path) => this.app.vault.getAbstractFileByPath(path))
-      .filter((file): file is TFile => file instanceof TFile && SEARCHABLE.has(file.extension.toLowerCase()))
-      .slice(0, moduleOptions(this.plugin.settings, "recent").limit);
+      .filter((file): file is TFile => file instanceof TFile && RECENT_TYPES.has(file.extension.toLowerCase()))
+      .slice(0, Math.max(moduleOptions(settings, "recent").limit, pinned.length));
     if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: t("section.recent.empty") }); return; }
     const list = card.createDiv({ cls: "qh-list" });
+    const save = (change: () => void) => { change(); void this.plugin.saveSettings().catch(() => new Notice(t("layout.saveFailed"))); };
     for (const file of files) {
-      this.renderItem(list, {
-        id: file.path, title: file.basename, icon: file.extension === "md" ? "file-text" : "file",
-        subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", meta: relativeTime(file.stat.mtime),
-        open: () => this.openPath(file.path, false),
+      const isPinned = pinned.includes(file.path);
+      const row = this.renderItem(list, {
+        id: file.path, title: file.basename, icon: isPinned ? "pin" : file.extension === "md" ? "file-text" : file.extension === "canvas" ? "layout-dashboard" : file.extension === "base" ? "database" : "file",
+        subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", open: () => {},
+      }, {
+        open: (event) => this.openNote(card, file.path, event),
+        menu: (menu) => {
+          menu.addItem((item) => item.setTitle(isChinese() ? "在新标签页打开" : "Open in new tab").setIcon("file-plus").onClick(() => this.openPath(file.path, true)));
+          menu.addItem((item) => item.setTitle(isPinned ? (isChinese() ? "取消置顶" : "Unpin") : (isChinese() ? "置顶" : "Pin to top")).setIcon(isPinned ? "pin-off" : "pin")
+            .onClick(() => save(() => { settings.recentPinned = isPinned ? pinned.filter((path) => path !== file.path) : [...pinned, file.path].slice(-20); })));
+          if (!isPinned) menu.addItem((item) => item.setTitle(isChinese() ? "从列表移除" : "Remove from list").setIcon("eye-off")
+            .onClick(() => save(() => { settings.recentHidden = [...settings.recentHidden.filter((path) => path !== file.path), file.path].slice(-200); })));
+        },
       });
+      if (isPinned) row.addClass("is-pinned");
     }
   }
 
@@ -980,19 +1081,51 @@ export class HomeView extends ItemView {
     const body = card.createDiv({ cls: "qh-native-preview" });
     body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "正在读取…" : "Loading…" });
     // Without the core plugin, the action leads to where it can be turned on instead of a disabled button.
-    if (commandExists(this.app, "daily-notes")) cardAction(card, isChinese() ? "打开今日日记" : "Open today's note",
-      () => void openTodayNote(this.app, this.app.workspace.getLeaf("tab")).catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))), "arrow-up-right");
-    else cardAction(card, isChinese() ? "启用日记核心插件" : "Turn on Daily notes", () => {
+    if (commandExists(this.app, "daily-notes")) {
+      const action = cardAction(card, isChinese() ? "打开今日日记" : "Open today's note", () => {}, "arrow-up-right");
+      bindOpen(action, (event) => void ensureTodayNote(this.app).then((file) => openFromHome(this.plugin, card, file, event))
+        .catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))));
+    } else cardAction(card, isChinese() ? "启用日记核心插件" : "Turn on Daily notes", () => {
       const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
       setting?.open?.(); setting?.openTabById?.("plugins");
     }, "power", true);
+    const limit = moduleOptions(this.plugin.settings, "daily-preview", pageId).limit;
     void todayPath(this.app).then(async (path) => {
       const file = this.app.vault.getAbstractFileByPath(path);
-      const lines = file instanceof TFile ? dailyExcerpt(await this.app.vault.cachedRead(file), moduleOptions(this.plugin.settings, "daily-preview", pageId).limit) : [];
+      const content = file instanceof TFile ? editorFor(this.app, file)?.getValue() ?? await this.app.vault.cachedRead(file) : "";
+      const all = excerptLines(content, Number.POSITIVE_INFINITY);
       if (!card.isConnected) return;
       body.empty();
-      if (!lines.length) body.createDiv({ cls: "qh-card-empty", text: file ? (isChinese() ? "今日日记还没有正文" : "Today's note is empty") : (isChinese() ? "今天还没有日记" : "No daily note yet") });
-      else for (const line of lines) body.createDiv({ cls: "qh-native-line", text: line });
+      if (!all.length) { body.createDiv({ cls: "qh-card-empty", text: file ? (isChinese() ? "今日日记还没有正文" : "Today's note is empty") : (isChinese() ? "今天还没有日记" : "No daily note yet") }); return; }
+      const rows = content.split("\n");
+      for (const entry of all.slice(0, limit)) {
+        const line = body.createDiv({ cls: "qh-native-line qh-native-link" });
+        if (entry.task && file instanceof TFile) {
+          const raw = rows[entry.line] ?? "";
+          const box = line.createEl("input", { type: "checkbox", cls: "qh-line-check" });
+          box.checked = entry.task === "done";
+          box.addEventListener("click", (event) => event.stopPropagation());
+          box.addEventListener("change", () => {
+            box.disabled = true;
+            const item = { line: entry.line, raw: raw.replace(/\r$/, ""), text: entry.text };
+            const write = box.checked
+              ? (current: string) => completeTodo(current, "", item)
+              : (current: string) => reopenTodo(current, item.raw, item.raw.replace(/\[[xX]\]/, "[ ]"));
+            void update(this.app, file, write).catch(() => {
+              box.checked = !box.checked;
+              new Notice(isChinese() ? "这一行已被修改，请刷新后再试" : "This line changed; refresh and try again");
+            }).finally(() => { box.disabled = false; });
+          });
+          line.toggleClass("is-done", entry.task === "done");
+        }
+        const text = line.createSpan({ text: entry.text });
+        text.id = `qh-line-${crypto.randomUUID()}`;
+        line.querySelector<HTMLInputElement>(".qh-line-check")?.setAttr("aria-labelledby", text.id);
+        line.tabIndex = 0;
+        bindOpen(line, (event) => this.openNote(card, path, event, entry.line));
+        line.addEventListener("keydown", (event) => { if (event.key === "Enter") this.openNote(card, path, event, entry.line); });
+      }
+      if (all.length > limit) body.createDiv({ cls: "qh-native-scope", text: isChinese() ? `还有 ${all.length - limit} 行` : `${all.length - limit} more lines` });
     }).catch(() => {
       if (!card.isConnected) return;
       body.empty();
@@ -1000,43 +1133,74 @@ export class HomeView extends ItemView {
     });
   }
 
+  /** Daily notes and the notes Home writes into (Inbox, task note) change constantly and would crowd out everything else. */
+  private async homeNoteFilter(): Promise<(path: string) => boolean> {
+    const daily = await dailyMatcher(this.app);
+    const own = new Set([this.plugin.settings.captureInboxPath, this.plugin.settings.todoPath]);
+    return (path) => own.has(path) || daily(path);
+  }
+
   private renderRecentlyModified(parent: HTMLElement, pageId: string): void {
     const card = this.nativeCard(parent, "recently-modified", isChinese() ? "最近修改" : "Recently modified", "file-clock");
     const options = moduleOptions(this.plugin.settings, "recently-modified", pageId);
-    const files = recentlyModified(this.app, options.limit, options.folder);
     if (options.folder) card.createDiv({ cls: "qh-native-scope", text: options.folder });
-    if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "还没有 Markdown 笔记" : "No Markdown notes yet" }); return; }
     const list = card.createDiv({ cls: "qh-list" });
-    for (const file of files) this.renderItem(list, { id: file.path, title: file.basename, icon: "file-text",
-      subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", meta: relativeTime(file.stat.mtime),
-      open: () => this.openPath(file.path, true) });
+    void (options.excludeDaily === false ? Promise.resolve(undefined) : this.homeNoteFilter()).then((exclude) => {
+      if (!card.isConnected) return;
+      const files = recentlyModified(this.app, options.limit, options.folder, exclude);
+      if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "还没有 Markdown 笔记" : "No Markdown notes yet" }); return; }
+      for (const file of files) this.renderItem(list, { id: file.path, title: file.basename, icon: "file-text",
+        subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", meta: relativeTime(file.stat.mtime), open: () => {} },
+      { open: (event) => this.openNote(card, file.path, event) });
+    });
   }
 
   private renderReviewNote(parent: HTMLElement): void {
     const card = this.nativeCard(parent, "review-note", isChinese() ? "回顾一篇" : "Review a note", "shuffle");
-    const candidates = reviewCandidates(this.app, this.plugin.settings.reviewFolder);
-    if (this.plugin.settings.reviewFolder) card.createDiv({ cls: "qh-native-scope", text: this.plugin.settings.reviewFolder });
-    if (!candidates.length) {
-      card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "所选文件夹里没有可回顾的笔记" : "No notes in this folder" });
-      cardAction(card, isChinese() ? "更换范围" : "Change folder", () => new ModuleOptionsModal(this.plugin, currentPage(this.plugin.settings).id, "review-note", isChinese() ? "回顾一篇" : "Review a note").open(), "folder", true);
-      return;
-    }
+    const settings = this.plugin.settings;
+    if (settings.reviewFolder) card.createDiv({ cls: "qh-native-scope", text: settings.reviewFolder });
     const list = card.createDiv({ cls: "qh-list" });
-    let current = this.reviewSelection?.folder === this.plugin.settings.reviewFolder
-      ? candidates.find((file) => file.path === this.reviewSelection?.path) : undefined;
-    const choose = (different: boolean) => {
-      if (!current || different) {
-        const pool = candidates.filter((file) => file !== current);
-        current = (pool.length ? pool : candidates)[Math.floor(Math.random() * (pool.length || candidates.length))];
+    const excerpt = card.createDiv({ cls: "qh-native-preview qh-review-excerpt" });
+    const actions = card.createDiv({ cls: "qh-workflow-actions" });
+    void (settings.reviewExcludeDaily ? dailyMatcher(this.app) : Promise.resolve(() => false)).then((daily) => {
+      if (!card.isConnected) return;
+      const excluded = new Set(settings.reviewExcluded);
+      const candidates = reviewCandidates(this.app, settings.reviewFolder, (path) => excluded.has(path) || daily(path));
+      if (!candidates.length) {
+        card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "所选范围里没有可回顾的笔记" : "No notes to review in this scope" });
+        cardAction(card, isChinese() ? "更换范围" : "Change folder", () => new ModuleOptionsModal(this.plugin, currentPage(settings).id, "review-note", isChinese() ? "回顾一篇" : "Review a note").open(), "folder", true);
+        return;
       }
-      this.reviewSelection = { folder: this.plugin.settings.reviewFolder, path: current.path };
-      list.empty();
-      this.renderItem(list, { id: current.path, title: current.basename, icon: "file-text",
-        subtitle: current.parent && !current.parent.isRoot() ? current.parent.path : "",
-        open: () => this.openPath(current!.path, true) });
-    };
-    choose(false);
-    cardAction(card, isChinese() ? "换一篇" : "Another note", () => choose(true), "shuffle");
+      let current = this.reviewSelection?.folder === settings.reviewFolder
+        ? candidates.find((file) => file.path === this.reviewSelection?.path) : undefined;
+      const mark = (change: () => void) => { change(); void this.plugin.saveSettings({ rerender: false }).catch(() => new Notice(t("layout.saveFailed"))); };
+      const seen = (path: string) => mark(() => { settings.reviewSeen = { ...settings.reviewSeen, [path]: localDay() }; });
+      const choose = (different: boolean) => {
+        if (!current || different) current = pickReview(candidates, settings.reviewSeen, localDay(), { avoid: current?.path });
+        if (!current) return;
+        const file = current;
+        this.reviewSelection = { folder: settings.reviewFolder, path: file.path };
+        list.empty(); excerpt.empty();
+        this.renderItem(list, { id: file.path, title: file.basename, icon: "file-text",
+          subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", meta: relativeTime(file.stat.mtime), open: () => {} },
+        { open: (event) => { seen(file.path); this.openNote(card, file.path, event); } });
+        void this.app.vault.cachedRead(file).then((markdown) => {
+          if (this.reviewSelection?.path !== file.path || !card.isConnected) return;
+          for (const line of dailyExcerpt(markdown, 2)) excerpt.createDiv({ cls: "qh-native-line", text: line });
+        }).catch(() => {});
+      };
+      choose(false);
+      cardAction(actions, isChinese() ? "换一篇" : "Another note", () => choose(true), "shuffle");
+      cardAction(actions, isChinese() ? "已回顾" : "Reviewed", () => { if (current) seen(current.path); choose(true); }, "check");
+      cardAction(actions, isChinese() ? "不再出现" : "Never show", () => {
+        if (!current) return;
+        const path = current.path;
+        mark(() => { settings.reviewExcluded = [...settings.reviewExcluded, path].slice(-500); });
+        const index = candidates.findIndex((file) => file.path === path);
+        if (index >= 0) candidates.splice(index, 1);
+        if (candidates.length) choose(true); else { list.empty(); excerpt.empty(); }
+      }, "eye-off");
+    });
   }
 
   private renderInboxPreview(parent: HTMLElement, pageId: string): void {
@@ -1052,54 +1216,126 @@ export class HomeView extends ItemView {
       })().catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))), "plus", true);
       return;
     }
+    const head = card.querySelector<HTMLElement>(".qh-card-head")!;
+    const count = head.createSpan({ cls: "qh-card-count" });
     body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "正在读取…" : "Loading…" });
-    void this.app.vault.cachedRead(file).then((markdown) => {
+    const undoLabels = { undo: isChinese() ? "撤销" : "Undo", failed: isChinese() ? "无法撤销：收件箱已被修改" : "Could not undo: the Inbox changed" };
+    void Promise.resolve(editorFor(this.app, file)?.getValue() ?? this.app.vault.cachedRead(file)).then((markdown) => {
       if (!card.isConnected) return;
       body.empty();
-      const lines = dailyExcerpt(markdown.split(/\r?\n/).slice(-500).join("\n"), 500)
-        .slice(-moduleOptions(this.plugin.settings, "inbox-preview", pageId).limit);
-      if (lines.length) for (const line of lines) body.createDiv({ cls: "qh-native-line", text: line });
-      else body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "收件箱还没有内容" : "Inbox is empty" });
+      const items = inboxItems(markdown);
+      count.setText(items.length ? String(items.length) : "");
+      if (!items.length) {
+        // Notes written before list items were used still show their last lines.
+        const lines = dailyExcerpt(markdown.split(/\r?\n/).slice(-500).join("\n"), 500).slice(-moduleOptions(this.plugin.settings, "inbox-preview", pageId).limit);
+        if (lines.length) for (const line of lines) body.createDiv({ cls: "qh-native-line", text: line });
+        else body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "收件箱是空的" : "Inbox is empty" });
+        return;
+      }
+      // Newest first: captures are appended to the end of the note.
+      for (const item of items.slice(-moduleOptions(this.plugin.settings, "inbox-preview", pageId).limit).reverse()) {
+        const row = body.createDiv({ cls: "qh-inbox-row" });
+        const text = row.createDiv({ cls: "qh-native-line qh-native-link", text: taskDisplay(item.text) });
+        text.tabIndex = 0;
+        bindOpen(text, (event) => this.openNote(card, path, event, item.line));
+        const tools = row.createDiv({ cls: "qh-inbox-tools" });
+        const tool = (icon: string, label: string, run: () => Promise<void>) => {
+          const button = tools.createEl("button", { cls: "qh-icon-button" });
+          setIcon(button, icon); hiddenLabel(button, label);
+          button.addEventListener("click", () => {
+            button.disabled = true;
+            void run().catch((error: unknown) => {
+              button.disabled = false;
+              new Notice(error instanceof Error && error.message !== "Item changed" ? error.message : (isChinese() ? "这条内容已被修改，请刷新后再试" : "This item changed; refresh and try again"));
+            });
+          });
+        };
+        tool("list-plus", isChinese() ? "转为待办" : "Move to tasks", async () => {
+          await update(this.app, file, (current) => removeInboxItem(current, item));
+          const [first, ...rest] = item.raw.split("\n");
+          const block = [`- [ ] ${first.replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, "").replace(/\r$/, "")}`, ...rest].join("\n");
+          try { await addTodoBlock(this.plugin, block); }
+          catch (error) { await update(this.app, file, (current) => restoreInboxItem(current, item)); throw error; }
+          new Notice(isChinese() ? "已移到今日待办" : "Moved to today's tasks");
+        });
+        tool("trash-2", isChinese() ? "删除" : "Delete", async () => {
+          await update(this.app, file, (current) => removeInboxItem(current, item));
+          undoNotice(isChinese() ? "已从收件箱删除" : "Removed from Inbox", () => update(this.app, file, (current) => restoreInboxItem(current, item)), undoLabels);
+        });
+      }
     }).catch(() => { if (card.isConnected) body.setText(isChinese() ? "无法读取收件箱" : "Could not read Inbox"); });
-    cardAction(card, isChinese() ? "打开收件箱" : "Open Inbox", () => this.openPath(path, true), "arrow-up-right");
+    const open = cardAction(card, isChinese() ? "打开收件箱" : "Open Inbox", () => {}, "arrow-up-right");
+    bindOpen(open, (event) => this.openNote(card, path, event));
   }
 
   private renderDailyFocus(parent: HTMLElement): void {
     const card = this.nativeCard(parent, "daily-focus", isChinese() ? "今日重点" : "Today's focus", "target");
-    const current = this.plugin.settings.dailyFocus;
-    const today = current.day === localDay() && current.text ? current : null;
-    if (today) {
-      const row = card.createEl("label", { cls: "qh-habit-row qh-focus-done" });
-      const done = row.createEl("input", { type: "checkbox" }); done.checked = today.done;
-      row.createSpan({ text: today.text });
-      row.toggleClass("is-done", today.done);
-      done.addEventListener("change", () => {
-        const previous = this.plugin.settings.dailyFocus;
-        this.plugin.settings.dailyFocus = { ...previous, done: done.checked };
-        row.toggleClass("is-done", done.checked);
-        void this.plugin.saveSettings({ rerender: false }).catch(() => { this.plugin.settings.dailyFocus = previous; done.checked = previous.done; row.toggleClass("is-done", previous.done); new Notice(t("layout.saveFailed")); });
-      });
-    }
-    const { input } = fieldRow(card, {
-      placeholder: today ? (isChinese() ? "换成另一件事" : "Change today's focus") : (isChinese() ? "今天最重要的一件事" : "One important thing today"),
-      label: isChinese() ? "今日重点" : "Today's focus", icon: "check", action: isChinese() ? "保存重点" : "Save focus", onSubmit: () => void save(),
+    const list = card.createDiv({ cls: "qh-focus-list" });
+    let items: FocusItem[] = [];
+    const save = async (next: FocusItem[]) => {
+      try { await writeFocus(this.plugin, next); this.requestRefresh(); }
+      catch (error) {
+        new Notice(error instanceof Error && error.message === "Focus property changed"
+          ? (isChinese() ? "今日日记里的 focus 属性不是文字，已保留原值" : "The focus property in today's note is not text; it was left unchanged")
+          : error instanceof Error ? error.message : t("layout.saveFailed"));
+        this.requestRefresh();
+      }
+    };
+    // The field is built right away so a refresh can hand focus back to it while the list loads.
+    const { input, row: field } = fieldRow(card, {
+      placeholder: isChinese() ? "今天最重要的一件事" : "One important thing today",
+      label: isChinese() ? "今日重点" : "Today's focus", icon: "plus", action: isChinese() ? "添加重点" : "Add focus", onSubmit: () => {
+        const text = input.value.trim();
+        if (!text) { input.focus(); return; }
+        if (items.some((item) => item.text === text)) { input.value = ""; return; }
+        input.value = "";
+        void save([...items, { text, done: false }]);
+      },
     });
     input.maxLength = 240;
-    const save = async () => {
-      const previous = this.plugin.settings.dailyFocus;
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
-      if (today && text === today.text) return;
-      input.blur();
-      this.plugin.settings.dailyFocus = { day: localDay(), text, done: false };
-      try { await this.plugin.saveSettings(); }
-      catch { this.plugin.settings.dailyFocus = previous; new Notice(t("layout.saveFailed")); }
-    };
-    if (today) cardAction(card, isChinese() ? "清除" : "Clear", () => {
-      const previous = this.plugin.settings.dailyFocus;
-      this.plugin.settings.dailyFocus = { day: localDay(), text: "", done: false };
-      void this.plugin.saveSettings().catch(() => { this.plugin.settings.dailyFocus = previous; new Notice(t("layout.saveFailed")); });
-    }, "x");
+    const note = card.createDiv({ cls: "qh-native-scope" });
+    void readFocus(this.plugin).then((state) => {
+      if (!card.isConnected) return;
+      items = state.items;
+      if (state.invalid) {
+        field.hide();
+        list.createDiv({ cls: "qh-card-empty", text: isChinese() ? "今日日记的 focus 属性不是文字，已保留原值。" : "The focus property in today's note is not text; it was left unchanged." });
+        return;
+      }
+      for (const [index, item] of items.entries()) {
+        const row = list.createDiv({ cls: "qh-focus-item" });
+        const label = row.createEl("label", { cls: "qh-habit-row qh-focus-done" });
+        const done = label.createEl("input", { type: "checkbox" }); done.checked = item.done;
+        label.createSpan({ text: item.text });
+        label.toggleClass("is-done", item.done);
+        done.addEventListener("change", () => { label.toggleClass("is-done", done.checked); void save(items.map((entry, at) => at === index ? { ...entry, done: done.checked } : entry)); });
+        const tools = row.createDiv({ cls: "qh-inbox-tools" });
+        const todo = tools.createEl("button", { cls: "qh-icon-button" });
+        setIcon(todo, "list-plus"); hiddenLabel(todo, isChinese() ? "加入今日待办" : "Add to today's tasks");
+        todo.addEventListener("click", () => {
+          todo.disabled = true;
+          void addTodoBlock(this.plugin, `- [ ] ${item.text}`).then(() => new Notice(isChinese() ? "已加入今日待办" : "Added to today's tasks"))
+            .catch((error: unknown) => { todo.disabled = false; new Notice(error instanceof Error ? error.message : t("layout.saveFailed")); });
+        });
+        const remove = tools.createEl("button", { cls: "qh-icon-button" });
+        setIcon(remove, "x"); hiddenLabel(remove, isChinese() ? "移除" : "Remove");
+        remove.addEventListener("click", () => void save(items.filter((_, at) => at !== index)));
+      }
+      if (!items.length && state.yesterday.length) {
+        const carry = list.createDiv({ cls: "qh-focus-yesterday" });
+        carry.createDiv({ cls: "qh-native-scope", text: isChinese() ? "昨天的重点还没完成" : "Unfinished from yesterday" });
+        for (const item of state.yesterday) {
+          const row = carry.createDiv({ cls: "qh-focus-item" });
+          row.createSpan({ cls: "qh-native-line", text: item.text });
+          cardAction(row, isChinese() ? "继续" : "Continue", () => void save([...items, { text: item.text, done: false }].slice(0, MAX_FOCUS)), "corner-down-right");
+        }
+      }
+      if (items.length >= MAX_FOCUS) field.hide();
+      else if (items.length) input.placeholder = isChinese() ? `再加一件（最多 ${MAX_FOCUS} 件）` : `Add another (up to ${MAX_FOCUS})`;
+      if (!items.length && !state.yesterday.length) note.setText(state.stored === "note"
+        ? (isChinese() ? "记在今日日记的 focus 属性里" : "Saved in today's note as the focus property")
+        : (isChinese() ? "启用日记核心插件后会记进日记" : "Turn on Daily notes to keep focus in your notes"));
+    }).catch(() => { if (card.isConnected) list.createDiv({ cls: "qh-card-empty", text: isChinese() ? "无法读取今日日记" : "Could not read today's note" }); });
   }
 
   private renderCountdown(parent: HTMLElement): void {
@@ -1159,13 +1395,17 @@ export class HomeView extends ItemView {
       else button.addEventListener("click", () => open(discoveryUrl(site, input?.value ?? "")));
     }
     if (id === "multi-search") {
+      const openAll = moduleOptions(this.plugin.settings, id).openAll !== false;
       const run = () => {
         if (!input?.value.trim()) { input?.focus(); return; }
-        if (!selected.size) { new Notice(isChinese() ? "请至少选择一个网站" : "Choose at least one website"); return; }
-        for (const site of config.sites) if (selected.has(site.id)) open(discoveryUrl(site, input.value));
+        const chosen = config.sites.filter((site) => selected.has(site.id));
+        if (!chosen.length) { new Notice(isChinese() ? "请至少选择一个网站" : "Choose at least one website"); return; }
+        for (const site of openAll ? chosen : chosen.slice(0, 1)) open(discoveryUrl(site, input.value));
       };
       submit = run;
-      card.createDiv({ cls: "qh-native-scope", text: isChinese() ? "点亮的网站会同时打开" : "Highlighted sites open together" });
+      card.createDiv({ cls: "qh-native-scope", text: openAll
+        ? (isChinese() ? "点亮的网站会同时打开" : "Highlighted sites open together")
+        : (isChinese() ? "回车用第一个点亮的网站搜索" : "Enter searches the first highlighted site") });
     } else if (input) {
       const first = shown.find((site) => site.search) ?? config.sites.find((site) => site.search)!;
       submit = () => { if (!input.value.trim()) { input.focus(); return; } open(discoveryUrl(first, input.value)); };

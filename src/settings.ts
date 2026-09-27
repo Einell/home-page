@@ -5,10 +5,11 @@ import { calendarUrl, clockMinutes, validZone, type WeatherLocation, type ZoneEn
 import { PRODUCTIVITY_MODULES } from "./productivity-catalog";
 import { normalizeFocus, type FocusSession } from "./productivity-data";
 import { isChinese } from "./i18n";
-import { defaultHomeShortcuts, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
+import { defaultHomeShortcuts, FAVICON, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
 export type WallpaperRotation = "daily" | "open" | "fixed";
 export type Headline = "clock" | "custom";
+export interface FocusItem { text: string; done: boolean }
 
 /** A photo Home is showing or has cached. `url` is the image; `page` credits the photographer. */
 export interface Photo {
@@ -39,6 +40,12 @@ export interface ModuleOptions {
   start?: string; end?: string;
   location?: WeatherLocation;
   unit?: "c" | "f";
+  /** Recently modified: leave out daily notes and the notes Home writes to. Unset means true. */
+  excludeDaily?: boolean;
+  /** Due today: also list overdue tasks. Unset follows whether an Overdue card is on the page. */
+  includeOverdue?: boolean;
+  /** Multi-search: Enter opens every highlighted site (true) or only the first (false). Unset means true. */
+  openAll?: boolean;
 }
 export const DEFAULT_MODULE_OPTIONS: ModuleOptions = { visible: true, limit: 3 };
 
@@ -79,6 +86,8 @@ export interface HomeSettings {
   activePageId: string;
   homePageId: string;
   homeShortcutsSeeded: boolean;
+  /** 0.5.0 turned website shortcuts that still had the generic globe into site icons, once. */
+  shortcutFavicons: boolean;
   pages: HomePage[];
   /** Show the "today" button next to search (when the daily notes command exists). */
   showDaily: boolean;
@@ -98,7 +107,23 @@ export interface HomeSettings {
   focusLog: boolean;
   /** Finished sessions today, for the focus card. */
   focusStats: { day: string; count: number; minutes: number };
-  dailyFocus: { day: string; text: string; done: boolean };
+  /** Used only when Daily notes is off; otherwise focus lives in the daily note's `focus` / `focus_done` properties. */
+  dailyFocus: { day: string; items: FocusItem[] };
+  /** Open notes from cards in a new tab instead of Home's own tab. ⌘/Ctrl-click always opens a new tab. */
+  openInNewTab: boolean;
+  /** How many past days of daily notes the Todo card looks at for unfinished tasks. */
+  todoCarryDays: number;
+  /** Line format for Quick capture and ⇧↵ in search. */
+  captureFormat: "plain" | "time" | "task";
+  /** Recently opened: pinned paths first, hidden paths left out until opened again. */
+  recentPinned: string[];
+  recentHidden: string[];
+  /** Review a note: day each note was last reviewed, notes never to show again, and whether daily notes are skipped. */
+  reviewSeen: Record<string, string>;
+  reviewExcluded: string[];
+  reviewExcludeDaily: boolean;
+  /** Play a short chime when a focus or break session ends. */
+  focusSound: boolean;
   ambient: { kind: "white" | "pink" | "brown"; volume: number };
   countdown: { label: string; date: string };
   hiddenRecommendations: string[];
@@ -163,6 +188,7 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   activePageId: "home",
   homePageId: "home",
   homeShortcutsSeeded: true,
+  shortcutFavicons: true,
   pages: (["home", "focus", "knowledge", "reading", "entertainment", "explore"] as const).map(presetPage),
   showDaily: true,
   captureTarget: "inbox",
@@ -176,10 +202,19 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   focusSession: normalizeFocus(null),
   focusLog: false,
   focusStats: { day: "", count: 0, minutes: 0 },
-  dailyFocus: { day: "", text: "", done: false },
+  dailyFocus: { day: "", items: [] },
   ambient: { kind: "brown", volume: 0.4 },
   countdown: { label: "", date: "" },
   hiddenRecommendations: [],
+  openInNewTab: false,
+  todoCarryDays: 7,
+  captureFormat: "plain",
+  recentPinned: [],
+  recentHidden: [],
+  reviewSeen: {},
+  reviewExcluded: [],
+  reviewExcludeDaily: true,
+  focusSound: true,
 };
 
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -271,6 +306,9 @@ function normalizeModules(value: unknown): Record<string, ModuleOptions> {
         && Number.isFinite(candidate.location.latitude) && Number.isFinite(candidate.location.longitude)
         ? { location: { name: candidate.location.name.slice(0, 80), latitude: candidate.location.latitude, longitude: candidate.location.longitude } } : {}),
       ...(candidate.unit === "c" || candidate.unit === "f" ? { unit: candidate.unit } : {}),
+      ...(typeof candidate.excludeDaily === "boolean" ? { excludeDaily: candidate.excludeDaily } : {}),
+      ...(typeof candidate.includeOverdue === "boolean" ? { includeOverdue: candidate.includeOverdue } : {}),
+      ...(typeof candidate.openAll === "boolean" ? { openAll: candidate.openAll } : {}),
       visible: typeof candidate.visible === "boolean" ? candidate.visible : true,
       limit: typeof candidate.limit === "number" && Number.isFinite(candidate.limit)
         ? Math.min(6, Math.max(1, Math.floor(candidate.limit))) : 3,
@@ -302,6 +340,9 @@ export function normalizeSettings(saved: unknown): HomeSettings {
   const fresh = Object.keys(raw).length === 0;
   const pages = fresh ? structuredClone(defaults.pages) : normalizePages(raw, modules);
   const homePageId = pages.some(page => page.id === raw.homePageId) ? raw.homePageId as string : (pages.find(page => page.id === "home")?.id ?? pages[0].id);
+  if (!fresh && raw.shortcutFavicons !== true) {
+    for (const page of pages) for (const group of page.shortcutGroups) for (const item of group.items) if (item.kind === "url" && item.icon === "globe") item.icon = FAVICON;
+  }
   if (!fresh && raw.homeShortcutsSeeded !== true) {
     const home = pages.find(page => page.id === homePageId)!;
     const defaults = defaultHomeShortcuts(isChinese());
@@ -339,6 +380,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     tabsEnabled: fresh ? true : raw.tabsEnabled === true,
     homePageId,
     homeShortcutsSeeded: true,
+    shortcutFavicons: true,
     activePageId: pages.some((page) => page.id === raw.activePageId) ? raw.activePageId as string : pages[0].id,
     pages,
     showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
@@ -356,12 +398,34 @@ export function normalizeSettings(saved: unknown): HomeSettings {
       const count = typeof stats.count === "number" && Number.isFinite(stats.count) ? Math.max(0, Math.floor(stats.count)) : 0;
       const minutes = typeof stats.minutes === "number" && Number.isFinite(stats.minutes) ? Math.max(0, Math.floor(stats.minutes)) : 0;
       return { day: /^\d{4}-\d{2}-\d{2}$/.test(text(stats.day)) ? text(stats.day) : "", count, minutes }; })(),
-    dailyFocus: { day: /^\d{4}-\d{2}-\d{2}$/.test(text(focus.day)) ? text(focus.day) : "", text: text(focus.text).slice(0, 240), done: focus.done === true },
+    dailyFocus: { day: /^\d{4}-\d{2}-\d{2}$/.test(text(focus.day)) ? text(focus.day) : "", items: focusItems(focus) },
+    openInNewTab: raw.openInNewTab === true,
+    todoCarryDays: [1, 3, 7, 14, 30].includes(raw.todoCarryDays as number) ? raw.todoCarryDays as number : defaults.todoCarryDays,
+    captureFormat: pick(raw.captureFormat, ["plain", "time", "task"], defaults.captureFormat),
+    recentPinned: [...new Set(strings(raw.recentPinned))].slice(0, 20),
+    recentHidden: [...new Set(strings(raw.recentHidden))].slice(-200),
+    reviewSeen: (() => {
+      const seen = raw.reviewSeen && typeof raw.reviewSeen === "object" && !Array.isArray(raw.reviewSeen) ? raw.reviewSeen as Record<string, unknown> : {};
+      const entries = Object.entries(seen).filter((entry): entry is [string, string] => entry[0] !== "__proto__" && typeof entry[1] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry[1]));
+      return Object.fromEntries(entries.sort((a, b) => b[1].localeCompare(a[1])).slice(0, 500));
+    })(),
+    reviewExcluded: [...new Set(strings(raw.reviewExcluded))].slice(0, 500),
+    reviewExcludeDaily: raw.reviewExcludeDaily !== false,
+    focusSound: raw.focusSound !== false,
     ambient: { kind: pick(ambient.kind, ["white", "pink", "brown"], defaults.ambient.kind),
       volume: typeof ambient.volume === "number" && Number.isFinite(ambient.volume) ? Math.min(1, Math.max(0, ambient.volume)) : defaults.ambient.volume },
     countdown: { label: text(deadline.label).slice(0, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(text(deadline.date)) ? text(deadline.date) : "" },
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };
+}
+
+/** Up to three focus items; older saves had a single `text` / `done`. */
+export function focusItems(raw: Record<string, unknown>): FocusItem[] {
+  if (Array.isArray(raw.items)) return raw.items.flatMap((item: unknown) => {
+    const entry = item as Partial<FocusItem> | null;
+    return entry && typeof entry.text === "string" && entry.text.trim() ? [{ text: entry.text.trim().slice(0, 240), done: entry.done === true }] : [];
+  }).slice(0, 3);
+  return typeof raw.text === "string" && raw.text.trim() ? [{ text: raw.text.trim().slice(0, 240), done: raw.done === true }] : [];
 }
 
 export function localDay(date = new Date()): string {

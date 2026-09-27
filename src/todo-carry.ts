@@ -1,9 +1,12 @@
-import { TFile, moment } from 'obsidian';
+import { TFile, moment, normalizePath } from 'obsidian';
 import type QiaomuHomePlugin from './main';
 import { todayPath, dailyOptions, ensureParent, initialDailyContent } from './today';
 import { commandExists } from './ecosystem';
 import { editorFor, update } from './todo-files';
 import { carryTasks, carrySource, carryBlock, underHeading, type CarryTask } from './todo-data';
+import { isChinese } from './i18n';
+export const todayHeading = (): string => isChinese() ? '今日待办' : 'Today';
+export const carryHeading = (): string => isChinese() ? '昨日未完成' : 'Carried over';
 export interface CarryGroup { file: TFile; snapshot: string; tasks: CarryTask[] }
 export async function todoTarget(plugin: QiaomuHomePlugin): Promise<string> {
   return plugin.settings.todoDaily && commandExists(plugin.app, 'daily-notes') ? todayPath(plugin.app) : plugin.settings.todoPath;
@@ -24,19 +27,27 @@ export async function ensureTodoFile(plugin: QiaomuHomePlugin, path: string): Pr
 export async function readTaskFile(plugin: QiaomuHomePlugin, file: TFile): Promise<string> {
   return editorFor(plugin.app,file)?.getValue() ?? plugin.app.vault.read(file);
 }
+/** Past daily notes inside the carry window (newest first), found by name instead of scanning the vault. */
+export async function carryCandidates(plugin: QiaomuHomePlugin, target: string): Promise<TFile[]> {
+  const options = await dailyOptions(plugin.app), folder = options.folder?.trim().replace(/\/$/,'') ?? '', format = options.format || 'YYYY-MM-DD';
+  const day = moment as unknown as () => { subtract(n: number, unit: string): { format(pattern: string): string } };
+  const files: TFile[] = [];
+  const seen = new Set<string>([target]);
+  for (let offset = 1; offset <= plugin.settings.todoCarryDays; offset++) {
+    const path = normalizePath(`${folder ? `${folder}/` : ''}${day().subtract(offset, 'days').format(format)}.md`);
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const file = plugin.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) files.push(file);
+  }
+  const fixed = plugin.app.vault.getAbstractFileByPath(plugin.settings.todoPath);
+  if (fixed instanceof TFile && !seen.has(fixed.path)) files.push(fixed);
+  return files;
+}
 export async function pendingCarry(plugin: QiaomuHomePlugin, target: string): Promise<CarryGroup[]> {
   if (!plugin.settings.todoDaily || !commandExists(plugin.app,'daily-notes')) return [];
-  const options = await dailyOptions(plugin.app), folder = options.folder?.replace(/\/$/,'') ?? '', format = options.format || 'YYYY-MM-DD';
-  const parse = moment as unknown as (value?: string, format?: string, strict?: boolean) => { isValid(): boolean; valueOf(): number; format(pattern:string):string };
-  const now = parse().format('YYYY-MM-DD'), groups: CarryGroup[] = [];
-  const files = plugin.app.vault.getMarkdownFiles().filter(file => {
-    if (file.path === target) return false;
-    if (file.path === plugin.settings.todoPath) return true;
-    if (folder && !file.path.startsWith(`${folder}/`)) return false;
-    const name = file.path.slice(folder ? folder.length+1 : 0,-3), date = parse(name,format,true);
-    return date.isValid() && date.format(format) === name && date.format('YYYY-MM-DD') < now;
-  }).sort((a,b)=>b.path.localeCompare(a.path));
-  for (const file of files) {
+  const groups: CarryGroup[] = [];
+  for (const file of await carryCandidates(plugin, target)) {
     const snapshot = editorFor(plugin.app,file)?.getValue() ?? await plugin.app.vault.cachedRead(file), tasks = carryTasks(snapshot);
     if (tasks.length) groups.push({file,snapshot,tasks});
   }
@@ -79,7 +90,7 @@ export function carrySelected(plugin: QiaomuHomePlugin, targetPath: string, grou
       const targetBefore = await readTaskFile(plugin,target);
       const j: Journal = {source:group.file.path,target:target.path,sourceBefore,targetBefore,
         sourceAfter:carrySource(sourceBefore,group.tasks,target.path),
-        targetAfter:underHeading(targetBefore,'昨日未完成',group.tasks.map(carryBlock).join('\n'))};
+        targetAfter:underHeading(targetBefore,carryHeading(),group.tasks.map(carryBlock).join('\n'))};
       await plugin.app.vault.adapter.write(journalPath(plugin),JSON.stringify(j));
       await recover(plugin);
       if (await plugin.app.vault.adapter.exists(journalPath(plugin))) throw new Error('Waiting for editor save. Retry shortly.');

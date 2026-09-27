@@ -8,9 +8,12 @@ describe('Markdown tasks', () => {
     const source = '- [ ] same\r\n- [ ] same\r\n  child\r\n';
     expect(completeTodo(source, source, readTodos(source)[1])).toBe('- [ ] same\r\n- [x] same\r\n  child\r\n');
   });
-  it('refuses stale snapshots', () => {
+  it('finds a task that moved, but refuses when it is gone or ambiguous', () => {
     const old = '- [ ] first';
-    expect(()=>completeTodo('intro\n'+old,old,readTodos(old)[0])).toThrow();
+    expect(completeTodo('intro\n'+old,old,readTodos(old)[0])).toBe('intro\n- [x] first');
+    expect(()=>completeTodo('intro\n- [x] first',old,readTodos(old)[0])).toThrow();
+    expect(()=>completeTodo('- [ ] other\n- [ ] first\n- [ ] first',old,readTodos('- [ ] other\n'+old)[1])).not.toThrow();
+    expect(()=>completeTodo('x\n- [ ] first\n- [ ] first',old,readTodos(old)[0])).toThrow();
   });
   it('appends one task without replacing existing content', () => {
     expect(appendTodo('notes\r\n', 'one\ntwo')).toBe('notes\r\n- [ ] one two\r\n');

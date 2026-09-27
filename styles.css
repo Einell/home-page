@@ -1341,3 +1341,50 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-ui .qh-save-state.is-error { color: var(--text-error); }
 .qh-ui .is-invalid, .qh-ui .is-invalid:focus, .qh-ui .is-invalid:focus-visible { border-color: var(--text-error) !important; }
 .qh-habit-editor .setting-item { padding: 8px 0; } .qh-habit-editor .setting-item-heading { padding-inline-start: 0; }
+
+/* 0.5.0 — high-frequency card polish */
+.qh-root .qh-todo-row.is-done span { text-decoration: line-through; color: var(--qh-muted); }
+.qh-root .qh-native-link { cursor: pointer; border-radius: 6px; }
+.qh-root .qh-native-link:hover { background: var(--qh-hover); }
+.qh-root .qh-native-link:focus-visible { outline: 2px solid var(--qh-focus); outline-offset: 1px; }
+.qh-root .qh-native-line.qh-native-link { display: flex; align-items: center; gap: 8px; padding: 1px 4px; margin: 0 -4px; }
+.qh-root .qh-native-line.qh-native-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.qh-root .qh-line-check { flex-shrink: 0; margin: 0; }
+.qh-root .qh-native-line.is-done > span { text-decoration: line-through; color: var(--qh-muted); }
+.qh-root .qh-card-count { margin-left: 6px; color: var(--qh-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.qh-root .qh-card-count:empty { display: none; }
+.qh-root .qh-inbox-row, .qh-root .qh-focus-item, .qh-root .qh-working-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.qh-root .qh-inbox-row > .qh-native-line, .qh-root .qh-focus-item > label, .qh-root .qh-focus-item > .qh-native-line, .qh-root .qh-working-row > :first-child { flex: 1; min-width: 0; }
+.qh-root .qh-inbox-tools { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity 120ms ease; }
+.qh-root .qh-inbox-row:hover .qh-inbox-tools, .qh-root .qh-focus-item:hover .qh-inbox-tools,
+.qh-root .qh-inbox-tools:focus-within { opacity: 1; }
+@media (hover: none) { .qh-root .qh-inbox-tools { opacity: 1; } }
+.qh-root .qh-working-row > .qh-icon-button { flex-shrink: 0; opacity: 0; }
+.qh-root .qh-working-row:hover > .qh-icon-button, .qh-root .qh-working-row > .qh-icon-button:focus-visible { opacity: 1; }
+@media (hover: none) { .qh-root .qh-working-row > .qh-icon-button { opacity: 1; } }
+.qh-root .qh-focus-yesterday { display: grid; gap: 4px; margin-bottom: 6px; }
+.qh-root .qh-review-excerpt:empty { display: none; }
+.qh-root .qh-review-excerpt .qh-native-line { color: var(--qh-muted); }
+.qh-root .qh-item.is-pinned .qh-thumb { color: var(--qh-text); }
+.qh-root .qh-workflow-task.is-overdue .qh-item-sub { color: var(--text-error); }
+.qh-root .qh-task-move { flex-shrink: 0; align-self: center; }
+.qh-root .qh-focus-target { width: 100%; margin: 4px 0; background-color: var(--qh-field); color: var(--qh-text); border: 1px solid var(--qh-border); box-shadow: none; }
+.qh-root .qh-focus-target:focus { border-color: var(--qh-focus); }
+.qh-root .qh-focus-label { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-root .qh-focus-dial.is-break .qh-focus-arc { stroke: var(--qh-muted); }
+.qh-root .qh-habit-count { color: var(--qh-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.qh-root .qh-habit-count:empty { display: none; }
+.qh-root .qh-habit-pill.is-invalid { opacity: 0.45; }
+.qh-root .qh-habit-grid { display: grid; gap: 4px; margin-top: 8px; }
+.qh-root .qh-habit-grid-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+.qh-root .qh-habit-grid-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qh-muted); font-size: 12px; }
+.qh-root .qh-habit-dots { display: flex; gap: 4px; }
+.qh-root .qh-habit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--qh-border); }
+.qh-root .qh-habit-dot.is-done { background: var(--qh-live); }
+.qh-root .qh-habit-dot.is-today { box-shadow: 0 0 0 1.5px var(--qh-focus); }
+.qh-ui .qh-favicon { width: 20px; height: 20px; border-radius: 4px; object-fit: contain; }
+.qh-ui .qh-icon-choice .qh-favicon { width: 16px; height: 16px; }
+.qh-ui .setting-item.is-invalid input { border-color: var(--text-error); }
+.qh-root .qh-capture-row { align-items: flex-end; }
+.qh-root .qh-capture-input { resize: none; overflow-y: auto; min-height: 34px; max-height: 160px; line-height: 1.5; font-family: inherit; }
+.qh-notice-undo { margin-left: 10px; padding: 2px 10px; height: auto; font-size: 12px; }

@@ -1,3 +1,4 @@
+import { openFromHome } from "./open";
 import { Notice, TFile, setIcon, type App } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { cardAction, fieldRow } from "./card-ui";
@@ -70,7 +71,7 @@ export function renderIntegration(parent: HTMLElement, plugin: QiaomuHomePlugin,
   if (state !== "enabled") { renderPluginGuide(card, app, { pluginId: config.plugin, pluginName: config.pluginName, pitch: L(config.description, config.descriptionEn), state, repo: config.repo }); return; }
   const body = card.createDiv({ cls: "qh-native-preview" });
   const message = (text: string) => body.createDiv({ cls: "qh-card-empty", text });
-  const open = (file: TFile) => void app.workspace.getLeaf("tab").openFile(file);
+  const open = (file: TFile) => void openFromHome(plugin, card, file);
   const row = (title: string, sub: string, run: () => void, icon = "file-text") => {
     const button = body.createEl("button", { cls: "qh-list-row" });
     setIcon(button.createSpan({ cls: "qh-list-row-icon" }), icon);

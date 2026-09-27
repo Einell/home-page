@@ -1,6 +1,6 @@
 import { MarkdownView, type App, type TFile } from "obsidian";
 export function editorFor(app: App, file: TFile) {
-  return app.workspace.getLeavesOfType('markdown').map(l => l.view).find((v): v is MarkdownView => v instanceof MarkdownView && v.file === file)?.editor;
+  return (app.workspace?.getLeavesOfType('markdown') ?? []).map(l => l.view).find((v): v is MarkdownView => v instanceof MarkdownView && v.file === file)?.editor;
 }
 export async function update(app: App, file: TFile, transform: (text: string) => string): Promise<void> {
   const editor = editorFor(app, file);
