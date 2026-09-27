@@ -1,5 +1,6 @@
 import { TFile, moment, normalizePath, type App, type WorkspaceLeaf } from "obsidian";
 import { commandExists } from "./ecosystem";
+import { update } from "./todo-files";
 import { t } from "./i18n";
 import type { HomeSettings } from "./settings";
 
@@ -64,14 +65,35 @@ function inboxPath(app: App, settings: HomeSettings): string {
   return normalizePath(input);
 }
 
-/** Capture stays on Home and appends atomically to the selected Markdown file. */
+/** One captured entry as Markdown: a list item (optionally a task or time-stamped); extra lines are indented under it. */
+export function captureLine(text: string, format: "plain" | "time" | "task" = "plain", time = now().format("HH:mm")): string {
+  const [first, ...rest] = text.trim().split(/\r?\n/);
+  const head = format === "task" ? `- [ ] ${first.trim()}` : format === "time" ? `- ${time} ${first.trim()}` : `- ${first.trim()}`;
+  return [head, ...rest.filter(line => line.trim()).map(line => `  ${line.trim()}`)].join("\n");
+}
+
+/** Capture stays on Home and appends to the selected Markdown file (through the editor when it is open). */
 export async function captureNote(app: App, settings: HomeSettings, text: string): Promise<string> {
   const note = text.trim();
   if (!note) throw new Error("Empty capture");
   if (settings.captureTarget === "daily" && !commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
   const path = settings.captureTarget === "daily" ? await todayPath(app) : inboxPath(app, settings);
-  await appendLine(app, path, `- ${note}`, settings.captureTarget === "daily");
+  await appendLine(app, path, captureLine(note, settings.captureFormat), settings.captureTarget === "daily");
   return path;
+}
+
+/** Recognises daily notes by the Daily notes folder and name format; always false when Daily notes is off. */
+export async function dailyMatcher(app: App): Promise<(path: string) => boolean> {
+  if (!commandExists(app, "daily-notes")) return () => false;
+  const options = await dailyOptions(app).catch(() => null);
+  if (!options) return () => false;
+  const folder = (options.folder ?? "").trim().replace(/\/$/, ""), format = options.format || "YYYY-MM-DD";
+  const parse = moment as unknown as (value: string, format: string, strict: boolean) => { isValid(): boolean };
+  return (path) => {
+    if (!path.endsWith(".md") || (folder && !path.startsWith(`${folder}/`))) return false;
+    const name = path.slice(folder ? folder.length + 1 : 0, -3);
+    return parse(name, format, true).isValid();
+  };
 }
 
 /** Appends one Markdown line to today's daily note, creating it from the daily template when needed. */
@@ -94,7 +116,7 @@ async function appendLine(app: App, path: string, line: string, daily: boolean):
     }
   }
   if (!(file instanceof TFile)) throw new Error(t("capture.badFile"));
-  await app.vault.process(file, (content) => `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`);
+  await update(app, file, (content) => `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`);
 }
 
 /** Today's daily note, created from the daily template when missing. Never overwrites an existing note. */

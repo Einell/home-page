@@ -1,7 +1,8 @@
+import { openFromHome } from "./open";
 import { FuzzySuggestModal, moment, normalizePath, Notice, requestUrl, Setting, TFile, TFolder, setIcon, setTooltip } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { askAgent, canAsk } from "./agent-bridge";
-import { cardAction, fieldRow } from "./card-ui";
+import { cardAction } from "./card-ui";
 import type { NoiseKind } from "./ambient";
 import { EXTRA_MODULES, type ExtraId } from "./extra-catalog";
 import {
@@ -68,7 +69,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
   const body = card.createDiv({ cls: "qh-native-preview" });
   const message = (text: string, into = body) => into.createDiv({ cls: "qh-card-empty", text });
   const button = (into: HTMLElement, text: string, run: () => void, icon?: string, primary = false) => cardAction(into, text, run, icon, primary);
-  const open = (file: TFile, line?: number) => void app.workspace.getLeaf("tab").openFile(file, { eState: line === undefined ? undefined : { line } });
+  const open = (file: TFile, line?: number) => void openFromHome(plugin, card, file, null, line);
   const setup = (text: string, label: string) => { message(text); button(body, label, configure, "settings-2", true); };
   const run = (action: () => Promise<void>) => {
     message(L("正在读取…", "Loading…"));
@@ -97,15 +98,23 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     const daily = plugin.settings.captureTarget === "daily";
     const status = createDiv({ cls: "qh-native-scope", text: daily ? L("写入今日日记 · 回车保存", "Goes to today's daily note · Enter to save") : L(`写入 ${plugin.settings.captureInboxPath} · 回车保存`, `Goes to ${plugin.settings.captureInboxPath} · Enter to save`) });
     status.setAttr("aria-live", "polite");
-    const { input: field, submit } = fieldRow(body, { placeholder: L("记下一句话…", "Write one line…"), label: L("快速记录", "Quick capture"), icon: "corner-down-left", action: L("记下", "Save"), onSubmit: () => {
+    // A textarea so pasted or Shift+Enter lines are kept; Enter saves. Extra lines are indented under the first.
+    const row = body.createDiv({ cls: "qh-field-row qh-capture-row" });
+    const field = row.createEl("textarea", { cls: "qh-discovery-input qh-capture-input", attr: { rows: "1", placeholder: L("记下一句话…（⇧↵ 换行）", "Write a line… (⇧↵ for a new line)"), "aria-label": L("快速记录", "Quick capture"), maxlength: "2000" } });
+    const submit = row.createEl("button", { cls: "qh-field-submit" });
+    setIcon(submit, "corner-down-left"); submit.createSpan({ cls: "qh-sr-only", text: L("记下", "Save") });
+    const grow = () => { field.setCssProps({ height: "auto" }); field.setCssProps({ height: `${Math.min(field.scrollHeight, 160)}px` }); };
+    const save = () => {
       if (!field.value.trim()) { field.focus(); return; }
       submit.disabled = true;
       void captureNote(app, plugin.settings, field.value).then(path => {
-        field.value = ""; status.setText(L(`已记下 · ${path}`, `Saved · ${path}`)); field.focus();
+        field.value = ""; grow(); status.setText(L(`已记下 · ${path}`, `Saved · ${path}`)); field.focus();
       }).catch((error: unknown) => new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) })))
         .finally(() => { submit.disabled = false; });
-    } });
-    field.maxLength = 2000;
+    };
+    field.addEventListener("input", grow);
+    field.addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !submit.disabled) { event.preventDefault(); save(); } });
+    submit.addEventListener("click", save);
     body.appendChild(status);
     return;
   }
@@ -135,7 +144,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         await ensureParent(app, week.path);
         const existing = app.vault.getAbstractFileByPath(week.path);
         const created = existing instanceof TFile ? existing : await app.vault.create(week.path, content);
-        await app.workspace.getLeaf("tab").openFile(created);
+        await openFromHome(plugin, card, created);
       })().catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))).finally(() => { create.disabled = false; });
     }, "plus", true);
     return;
@@ -299,7 +308,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         const existing = app.vault.getAbstractFileByPath(path);
         const file = existing instanceof TFile ? existing : await app.vault.create(path, videoNote(video, localDay(), isChinese()));
         url.value = ""; title.value = "";
-        await app.workspace.getLeaf("tab").openFile(file);
+        await openFromHome(plugin, card, file);
       })().catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))).finally(() => { create.disabled = false; });
     }, "plus", true);
     if (canAsk(app)) button(actions, L("交给 Agent 总结", "Summarize with Agent"), () => {
@@ -522,6 +531,12 @@ export function renderExtraOptions(contentEl: HTMLElement, plugin: QiaomuHomePlu
     .setValue(String(current().limit)).onChange(value => { void persist({ limit: Number(value) }); }));
 
   if (id === "quick-capture") {
+    new Setting(contentEl).setName(L("记录格式", "Line format")).setDesc(L("与搜索框 ⇧↵ 共用。", "Shared with ⇧↵ in the search box."))
+      .addDropdown(dropdown => dropdown.addOptions({ plain: L("普通列表 - 内容", "List item - text"), time: L("带时间 - 14:30 内容", "With time - 14:30 text"), task: L("待办 - [ ] 内容", "Task - [ ] text") })
+        .setValue(plugin.settings.captureFormat).onChange(value => {
+          const previous = plugin.settings.captureFormat;
+          void saveGlobal(() => { plugin.settings.captureFormat = value as "plain" | "time" | "task"; }, () => { plugin.settings.captureFormat = previous; });
+        }));
     new Setting(contentEl).setName(L("写入位置", "Save to")).setDesc(L("与首页搜索框的「记下」共用这个设置。", "Shared with capture from the Home search box."))
       .addDropdown(dropdown => dropdown.addOptions({ inbox: L("收件箱笔记", "Inbox note"), daily: L("今日日记", "Today's daily note") })
         .setValue(plugin.settings.captureTarget).onChange(value => {

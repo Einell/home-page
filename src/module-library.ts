@@ -356,6 +356,8 @@ export class ModuleOptionsModal extends Modal {
         await persist({ sites: next });
       }));
       if (multi) {
+        new Setting(this.contentEl).setName(L("回车时", "On Enter")).addDropdown(dropdown => dropdown.addOptions({ all: L("打开所有点亮的网站", "Open every highlighted site"), first: L("只打开第一个点亮的网站", "Open only the first highlighted site") })
+          .setValue(options.openAll === false ? "first" : "all").onChange(value => { void persist({ openAll: value === "all" }); }));
         const custom = new Setting(this.contentEl).setName(L("自定义搜索网站", "Custom search sites")).setDesc(L("每行一个，最多八个：名称 | https://example.com/?q={query}。离开输入框或按 ⌘↵ 保存。", "One per line, up to eight: Name | https://example.com/?q={query}. Saves when you leave the field or press ⌘↵."));
         custom.addTextArea(input => { input.inputEl.rows = 4; input.setPlaceholder("知乎 | https://www.zhihu.com/search?q={query}").setValue((options.customSites ?? []).map(site => `${site.name} | ${site.url}`).join("\n"));
           autoSave(this.contentEl, custom, input.inputEl, value => {
@@ -372,7 +374,9 @@ export class ModuleOptionsModal extends Modal {
       this.moduleId === "template-create" ? L("新笔记保存到", "Save new notes to") : this.moduleId === "project-next" ? L("项目文件夹", "Project folder") : L("笔记范围", "Note folder"),
       this.moduleId === "template-create" ? defaultFolderLabel(this.plugin) : this.moduleId === "project-next" ? L("尚未选择", "Not chosen") : L("整个知识库", "Whole vault"),
       options.folder ?? "", value => { void persist({ folder: value }); });
-    if (["due-today", "overdue", "milestones"].includes(this.moduleId)) this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("识别任务中的 📅 YYYY-MM-DD 或 [due:: YYYY-MM-DD]。", "Recognizes 📅 YYYY-MM-DD or [due:: YYYY-MM-DD] in tasks.") });
+    if (this.moduleId === "due-today") new Setting(this.contentEl).setName(L("同时列出逾期任务", "Include overdue tasks")).setDesc(L("默认在没有「逾期」卡片的页面上开启。", "On by default when this page has no Overdue card."))
+      .addToggle(toggle => toggle.setValue(options.includeOverdue ?? !moduleOptions(this.plugin.settings, "overdue", this.pageId).visible).onChange(value => { void persist({ includeOverdue: value }); }));
+    if (["due-today", "overdue", "milestones"].includes(this.moduleId)) this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("识别 Tasks 插件的 📅 截止 / ⏳ 计划 / 🛫 开始日期，以及 Dataview 的 [due:: ] 或 (due:: )。启用 Tasks 插件时，勾选会写入完成日期并生成重复任务的下一次。", "Recognizes Tasks 📅 due / ⏳ scheduled / 🛫 start dates and Dataview [due:: ] or (due:: ). With the Tasks plugin on, completing adds the done date and creates the next recurrence.") });
     if (config?.path) {
       const setting = new Setting(this.contentEl).setName(this.moduleId === "template-create" ? L("模板笔记", "Template note") : L("来源笔记", "Source note")).setDesc(options.path || L("尚未选择", "Not selected"));
       setting.addButton(button => button.setButtonText(L("选择笔记", "Choose note")).onClick(() => new FilePicker(this.plugin, ["md"], file => { void persist({ path: file.path }).then(() => { setting.setDesc(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).path ?? ""); }); }).open()));
@@ -387,9 +391,15 @@ export class ModuleOptionsModal extends Modal {
     if (this.moduleId === "focus-timer") {
       new Setting(this.contentEl).setName(L("每次专注时长", "Session duration")).setDesc(L("正在运行的计时保持不变；重置或下次开始时采用新时长。", "Running sessions keep their deadline; reset or start again to use the new duration.")).addDropdown(dropdown => dropdown.addOptions(Object.fromEntries([5, 15, 25, 45, 60, 90].map(minutes => [String(minutes), L(`${minutes} 分钟`, `${minutes} minutes`)]))).setValue(String(this.plugin.settings.focusSession.durationMinutes)).onChange(async value => {
         const previous = this.plugin.settings.focusSession;
-        this.plugin.settings.focusSession = { ...previous, durationMinutes: Number(value), remainingMs: !previous.endAt && previous.remainingMs === previous.durationMinutes * 60000 ? Number(value) * 60000 : previous.remainingMs };
+        const idle = !previous.endAt && previous.kind === "focus" && previous.remainingMs === previous.durationMinutes * 60000;
+        this.plugin.settings.focusSession = { ...previous, focusMinutes: Number(value), ...(idle ? { durationMinutes: Number(value), remainingMs: Number(value) * 60000 } : {}) };
         try { await this.plugin.saveSettings(); } catch { this.plugin.settings.focusSession = previous; new Notice(t("layout.saveFailed")); }
       }));
+      new Setting(this.contentEl).setName(L("结束提示音", "Chime when a session ends"))
+        .addToggle(toggle => toggle.setValue(this.plugin.settings.focusSound).onChange(async value => {
+          this.plugin.settings.focusSound = value;
+          try { await this.plugin.saveSettings({ rerender: false }); } catch { this.plugin.settings.focusSound = !value; toggle.setValue(!value); new Notice(t("layout.saveFailed")); }
+        }));
       new Setting(this.contentEl).setName(L("完成后记入今日日记", "Log to today's daily note")).setDesc(L("写入一行，例如「- 09:00–09:25 专注 25 分钟 · 今日重点」。需要启用日记核心插件。", "Adds a line such as “- 09:00–09:25 Focused 25 min · today's focus”. Requires Daily notes."))
         .addToggle(toggle => toggle.setValue(this.plugin.settings.focusLog).onChange(async value => {
           this.plugin.settings.focusLog = value;
@@ -401,6 +411,18 @@ export class ModuleOptionsModal extends Modal {
     if (config && !config.count) return;
     if (this.moduleId === "daily-focus") { this.contentEl.createEl("p", { text: L("直接在卡片上编辑今天的重点。", "Edit today's focus directly on the card.") }); return; }
     if (this.moduleId === "review-note") {
+      new Setting(this.contentEl).setName(L("跳过日记", "Skip daily notes")).setDesc(L("日记通常占库里大多数，跳过后更容易抽到值得回顾的笔记。", "Daily notes usually dominate a vault; skipping them surfaces notes worth revisiting."))
+        .addToggle(toggle => toggle.setValue(this.plugin.settings.reviewExcludeDaily).onChange(async value => {
+          this.plugin.settings.reviewExcludeDaily = value;
+          try { await this.plugin.saveSettings(); } catch { this.plugin.settings.reviewExcludeDaily = !value; toggle.setValue(!value); new Notice(t("layout.saveFailed")); }
+        }));
+      if (this.plugin.settings.reviewExcluded.length) new Setting(this.contentEl).setName(L(`已设为不再出现：${this.plugin.settings.reviewExcluded.length} 篇`, `Hidden from review: ${this.plugin.settings.reviewExcluded.length} notes`))
+        .addButton(button => button.setButtonText(L("全部恢复", "Restore all")).onClick(async () => {
+          const previous = this.plugin.settings.reviewExcluded;
+          this.plugin.settings.reviewExcluded = [];
+          try { await this.plugin.saveSettings(); this.contentEl.empty(); this.onOpen(); } catch { this.plugin.settings.reviewExcluded = previous; new Notice(t("layout.saveFailed")); }
+        }));
+      this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("回顾过的笔记 30 天内不再抽到；越久没动过的笔记越容易被抽到。", "Reviewed notes rest for 30 days; notes untouched for longer come up more often.") });
       folderDropdown(this.contentEl, this.plugin, L("回顾范围", "Review folder"), L("整个知识库（不含模板）", "Whole vault (templates excluded)"), this.plugin.settings.reviewFolder, value => {
         const previous = this.plugin.settings.reviewFolder;
         this.plugin.settings.reviewFolder = value;
@@ -418,6 +440,8 @@ export class ModuleOptionsModal extends Modal {
       }).open()));
       this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("与快速记录、搜索框 ⇧↵ 记录共用同一篇笔记。", "Shared with Quick capture and Shift+Enter capture in search.") });
     }
+    if (this.moduleId === "recently-modified") new Setting(this.contentEl).setName(L("不显示日记、收件箱和任务笔记", "Hide daily notes, Inbox and task note")).setDesc(L("它们天天在改，会把其他笔记挤出列表。", "They change every day and would push everything else out."))
+      .addToggle(toggle => toggle.setValue(options.excludeDaily !== false).onChange(value => { void persist({ excludeDaily: value }); }));
     if (this.moduleId === "recently-modified") folderDropdown(this.contentEl, this.plugin, L("笔记范围", "Note folder"), L("整个知识库", "Whole vault"), options.folder ?? "", value => { void persist({ folder: value }); });
     if (["daily-preview", "daily-timeline", "daily-calendar", "habit-checkin"].includes(this.moduleId)) {
       const info = new Setting(this.contentEl).setName(L("日记位置", "Daily notes")).setDesc(L("读取中…", "Loading…"));

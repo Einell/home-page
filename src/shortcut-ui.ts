@@ -4,7 +4,35 @@ import { FuzzySuggestModal, Menu, Modal, Notice, Setting, TFile, TFolder, setIco
 import type QiaomuHomePlugin from "./main";
 import { isChinese, t } from "./i18n";
 import { NewPageModal } from "./page-dialogs";
-import { defaultShortcutIcon, moveShortcutGroup, reorderShortcut, SHORTCUT_ICONS, shortcutModuleId, webTarget, type Shortcut, type ShortcutGroup, type ShortcutKind } from "./shortcuts";
+import { defaultShortcutIcon, FAVICON, linkTarget, moveShortcutGroup, reorderShortcut, SHORTCUT_ICONS, shortcutModuleId, type Shortcut, type ShortcutGroup, type ShortcutKind } from "./shortcuts";
+import { getIconIds } from "obsidian";
+import { commandExists, runCommand } from "./ecosystem";
+import { leafFor } from "./open";
+
+interface CommandInfo { id: string; name: string }
+function allCommands(plugin: QiaomuHomePlugin): CommandInfo[] {
+  const commands = (plugin.app as unknown as { commands?: { listCommands?(): CommandInfo[] } }).commands;
+  return commands?.listCommands?.() ?? [];
+}
+function commandName(plugin: QiaomuHomePlugin, id: string): string { return allCommands(plugin).find((command) => command.id === id)?.name ?? id; }
+class CommandPicker extends FuzzySuggestModal<CommandInfo> {
+  constructor(private plugin: QiaomuHomePlugin, private choose: (command: CommandInfo) => void) {
+    super(plugin.app); this.modalEl.addClass("qh-ui"); this.setPlaceholder(L("搜索命令", "Find a command"));
+  }
+  getItems(): CommandInfo[] { return allCommands(this.plugin); }
+  getItemText(command: CommandInfo): string { return command.name; }
+  onChooseItem(command: CommandInfo): void { this.choose(command); }
+}
+/** The site's own icon, fetched from DuckDuckGo's icon service by host name only; falls back to a globe. */
+export function paintShortcutIcon(el: HTMLElement, item: Pick<Shortcut, "icon" | "kind" | "target">): void {
+  el.empty();
+  if (item.icon !== FAVICON) { setIcon(el, item.icon); return; }
+  let host = "";
+  try { const url = new URL(item.target); if (url.protocol.startsWith("http")) host = url.hostname; } catch { /* not a web link */ }
+  if (!host) { setIcon(el, item.kind === "url" ? "link" : "file-text"); return; }
+  const img = el.createEl("img", { cls: "qh-favicon", attr: { alt: "", loading: "lazy", referrerpolicy: "no-referrer", src: `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico` } });
+  img.addEventListener("error", () => { el.empty(); setIcon(el, "globe"); }, { once: true });
+}
 
 const L = (zh: string, en: string): string => isChinese() ? zh : en;
 const groupName = (group: ShortcutGroup): string => group.name || L("常用入口", "Shortcuts");
@@ -52,16 +80,32 @@ export class ShortcutEditorModal extends Modal {
     options.createDiv({ text: L("图标", "Icon"), cls: "qh-shortcut-icon-label" });
     const icons = options.createDiv({ cls: "qh-shortcut-icons" });
     const iconNames = ["文件", "文件夹", "网页", "链接", "阅读", "星标", "喜欢", "工作", "写作", "代码", "学习", "主页", "日历", "音乐", "视频", "灵感"];
+    const custom = new Setting(options).setName(L("其他图标", "Other icon")).setDesc(L("任意 Lucide 图标名，例如 rocket、book-marked。", "Any Lucide icon name, e.g. rocket or book-marked."));
+    let customInput!: HTMLInputElement;
+    custom.addText((input) => {
+      customInput = input.inputEl;
+      input.inputEl.placeholder = "rocket";
+      input.onChange((value) => {
+        const name = value.trim().replace(/^lucide-/, "");
+        const known = getIconIds().includes(`lucide-${name}`) || getIconIds().includes(name);
+        custom.settingEl.toggleClass("is-invalid", Boolean(name) && !known);
+        if (name && known) { icon = name; renderIcons(); }
+      });
+    });
     const renderIcons = () => {
       icons.empty();
-      SHORTCUT_ICONS.forEach((value, index) => {
+      const choices = kind === "url" ? [FAVICON, ...SHORTCUT_ICONS] : SHORTCUT_ICONS;
+      choices.forEach((value) => {
         const button = icons.createEl("button", { cls: "qh-icon-choice", attr: { "aria-pressed": String(icon === value) } });
-        setIcon(button, value); label(button, isChinese() ? iconNames[index] : value);
+        if (value === FAVICON) { paintShortcutIcon(button, { icon: FAVICON, kind: "url", target: linkTarget(target) ?? "https://example.com" }); label(button, L("网站图标", "Site icon")); }
+        else { setIcon(button, value); label(button, isChinese() ? iconNames[SHORTCUT_ICONS.indexOf(value)] : value); }
         button.addEventListener("click", () => {
           icon = value;
-          icons.querySelectorAll("button").forEach((entry, at) => entry.setAttr("aria-pressed", String(SHORTCUT_ICONS[at] === icon)));
+          icons.querySelectorAll("button").forEach((entry, at) => entry.setAttr("aria-pressed", String(choices[at] === icon)));
+          if (customInput) customInput.value = "";
         });
       });
+      if (customInput && !choices.includes(icon)) customInput.value = icon;
     };
     const renderTarget = () => {
       targetSlot.empty(); targetSlot.hidden = !chosen;
@@ -70,6 +114,12 @@ export class ShortcutEditorModal extends Modal {
       const setting = new Setting(targetSlot).setName(kind === "url" ? L("网址", "Website") : L("目标", "Target"));
       if (kind === "daily") { target = "today"; setting.setName(L("今日日记", "Daily note")).setDesc(L("始终打开当天日记，不存在时自动创建。", "Opens today’s note and creates it if missing.")); }
       else if (kind === "url") setting.addText((input) => input.setValue(target).setPlaceholder("https://example.com").onChange((value) => { target = value; }));
+      else if (kind === "command") setting.setName(L("命令", "Command")).addButton((button) => button.setButtonText(target ? commandName(this.plugin, target) : L("选择命令", "Choose command")).onClick(() => {
+        new CommandPicker(this.plugin, (command) => {
+          if (kind !== "command" || !this.contentEl.isConnected) return;
+          target = command.id; button.setButtonText(command.name);
+        }).open();
+      }));
       else setting.addButton((button) => button.setButtonText(target || (kind === "folder" ? L("选择文件夹", "Choose folder") : L("选择笔记 / 文件", "Choose note / file"))).onClick(() => {
         const selectedKind = kind;
         new TargetPicker(this.plugin, kind, (file) => {
@@ -78,7 +128,7 @@ export class ShortcutEditorModal extends Modal {
         }).open();
       }));
     };
-    const typeChoices: [ShortcutKind, string, string][] = [["file", "file-text", L("笔记 / 文件", "Note / file")], ["folder", "folder", L("文件夹", "Folder")], ["url", "globe", L("网址", "Website")], ["daily", "calendar", L("今日日记", "Daily note")]];
+    const typeChoices: [ShortcutKind, string, string][] = [["file", "file-text", L("笔记 / 文件", "Note / file")], ["folder", "folder", L("文件夹", "Folder")], ["url", "globe", L("网址", "Website")], ["daily", "calendar", L("今日日记", "Daily note")], ["command", "terminal-square", L("命令", "Command")]];
     for (const [value, symbol, text] of typeChoices) {
       const button = types.createEl("button", { cls: "qh-shortcut-type", attr: { "aria-pressed": String(chosen && kind === value) } });
       setIcon(button.createSpan(), symbol); button.createSpan({ text }); typeButtons.push(button);
@@ -100,10 +150,10 @@ export class ShortcutEditorModal extends Modal {
       const page = this.plugin.settings.pages.find((entry) => entry.id === this.pageId);
       let current = this.groupId ? findGroup(this.plugin, this.pageId, this.groupId) : undefined;
       if (!page || (this.groupId && !current) || (this.itemId && !current?.items.some((item) => item.id === this.itemId))) { this.close(); return; }
-      const url = kind === "url" ? webTarget(target) : null;
-      const file = kind !== "url" ? this.app.vault.getAbstractFileByPath(target) : null;
-      if (!chosen || !target || (kind === "daily" ? false : kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
-        error.setText(kind === "url" ? L("请输入完整的 http 或 https 网址。", "Enter a full http or https URL.") : L("目标不存在，请重新选择。", "Target missing. Choose it again.")); return;
+      const url = kind === "url" ? linkTarget(target) : null;
+      const file = kind !== "url" && kind !== "command" ? this.app.vault.getAbstractFileByPath(target) : null;
+      if (!chosen || !target || (kind === "daily" ? false : kind === "command" ? !commandExists(this.app, target) : kind === "url" ? !url : kind === "folder" ? !(file instanceof TFolder) : !(file instanceof TFile))) {
+        error.setText(kind === "url" ? L("请输入完整网址（http、https 或 obsidian://）。", "Enter a full URL (http, https or obsidian://).") : kind === "command" ? L("请选择一个命令。", "Choose a command.") : L("目标不存在，请重新选择。", "Target missing. Choose it again.")); return;
       }
       const before = structuredClone(page);
       if (!current) {
@@ -140,14 +190,20 @@ export class ShortcutEditorModal extends Modal {
   onClose(): void { this.contentEl.empty(); }
 }
 
-export function shortcutName(item: Shortcut): string {
-  return item.name || (item.kind === "daily" ? L("今日日记", "Daily note") : item.kind === "url" ? new URL(item.target).hostname : item.target.split("/").pop()?.replace(/\.md$/, "") || "/");
+export function shortcutName(item: Shortcut, plugin?: QiaomuHomePlugin): string {
+  if (item.name) return item.name;
+  if (item.kind === "daily") return L("今日日记", "Daily note");
+  if (item.kind === "command") return plugin ? commandName(plugin, item.target) : item.target;
+  if (item.kind === "url") { try { const url = new URL(item.target); return url.hostname || url.href; } catch { return item.target; } }
+  return item.target.split("/").pop()?.replace(/\.md$/, "") || "/";
 }
-async function openShortcut(plugin: QiaomuHomePlugin, item: Shortcut, newTab: boolean): Promise<void> {
-  if (item.kind === "daily") { await openTodayNote(plugin.app, plugin.app.workspace.getLeaf(newTab ? "tab" : false)); return; }
-  if (item.kind === "url") { const url = webTarget(item.target); if (url) window.open(url, "_blank", "noopener,noreferrer"); return; }
+async function openShortcut(plugin: QiaomuHomePlugin, item: Shortcut, from: HTMLElement, event: MouseEvent | null, forceNewTab = false): Promise<void> {
+  const leaf = () => forceNewTab ? plugin.app.workspace.getLeaf("tab") : leafFor(plugin.app, from, event, plugin.settings.openInNewTab);
+  if (item.kind === "daily") { await openTodayNote(plugin.app, leaf()); return; }
+  if (item.kind === "command") { if (!runCommand(plugin.app, item.target)) new Notice(L("这个命令已不可用，可能对应的插件已关闭。", "This command is unavailable; its plugin may be off.")); return; }
+  if (item.kind === "url") { const url = linkTarget(item.target); if (url) window.open(url, "_blank", "noopener,noreferrer"); return; }
   const file = plugin.app.vault.getAbstractFileByPath(item.target);
-  if (item.kind === "file" && file instanceof TFile) { await plugin.app.workspace.getLeaf(newTab ? "tab" : false).openFile(file); return; }
+  if (item.kind === "file" && file instanceof TFile) { await leaf().openFile(file); return; }
   if (item.kind === "folder" && file instanceof TFolder) {
     let leaf = plugin.app.workspace.getLeavesOfType("file-explorer")[0];
     if (!leaf) {
@@ -224,18 +280,18 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
   for (const item of group.items) {
     const cell = grid.createDiv({ cls: "qh-shortcut-cell", attr: { "data-shortcut": item.id } });
     const button = cell.createEl("button", { cls: "qh-shortcut-link" });
-    setIcon(button.createSpan({ cls: "qh-shortcut-icon" }), item.icon);
-    button.createSpan({ cls: "qh-shortcut-name", text: shortcutName(item) });
-    if (item.kind !== "url" && item.kind !== "daily" && !plugin.app.vault.getAbstractFileByPath(item.target)) {
+    paintShortcutIcon(button.createSpan({ cls: "qh-shortcut-icon" }), item);
+    button.createSpan({ cls: "qh-shortcut-name", text: shortcutName(item, plugin) });
+    if (item.kind === "command" ? !commandExists(plugin.app, item.target) : item.kind !== "url" && item.kind !== "daily" && !plugin.app.vault.getAbstractFileByPath(item.target)) {
       cell.addClass("is-missing"); button.createSpan({ cls: "qh-shortcut-status", text: L("目标已移除", "Target missing") });
     }
-    const open = (newTab: boolean) => { void openShortcut(plugin, item, newTab).catch(() => new Notice(L("无法打开目标，请检查文件列表是否启用或重新选择目标。", "Unable to open. Enable the file explorer or choose the target again."))); };
-    button.addEventListener("click", (event) => open(event.metaKey || event.ctrlKey));
-    button.addEventListener("auxclick", (event) => { if (event.button === 1) open(true); });
+    const open = (event: MouseEvent | null, newTab = false) => { void openShortcut(plugin, item, card, event, newTab).catch(() => new Notice(L("无法打开目标，请检查文件列表是否启用或重新选择目标。", "Unable to open. Enable the file explorer or choose the target again."))); };
+    button.addEventListener("click", (event) => open(event));
+    button.addEventListener("auxclick", (event) => { if (event.button === 1) open(event); });
     const menu = (event: MouseEvent, anchor: HTMLElement) => {
       event.preventDefault(); event.stopPropagation();
       const menu = new Menu();
-      if (item.kind === "file") menu.addItem((entry) => entry.setTitle(L("在新标签页打开", "Open in new tab")).setIcon("external-link").onClick(() => open(true)));
+      if (item.kind === "file" || item.kind === "daily") menu.addItem((entry) => entry.setTitle(L("在新标签页打开", "Open in new tab")).setIcon("external-link").onClick(() => open(null, true)));
       menu.addItem((entry) => entry.setTitle(L("编辑", "Edit")).setIcon("pencil").onClick(() => new ShortcutEditorModal(plugin, pageId, group.id, item.id).open()));
       menu.addItem((entry) => entry.setTitle(L("移到其他分组", "Move to group")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(plugin, pageId, group.id, item.id).open()));
       const index = group.items.indexOf(item);
@@ -258,7 +314,7 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
       setIcon(handle, "grip-vertical"); label(handle, t("layout.drag"));
       handle.addEventListener("click", (event) => menu(event, handle));
       handle.draggable = true;
-      handle.addEventListener("dragstart", (event) => { event.stopPropagation(); dragged = item.id; event.dataTransfer?.setData("application/x-qiaomu-shortcut", item.id); dragState(true); feedback.start(cell, event, shortcutName(item)); });
+      handle.addEventListener("dragstart", (event) => { event.stopPropagation(); dragged = item.id; event.dataTransfer?.setData("application/x-qiaomu-shortcut", item.id); dragState(true); feedback.start(cell, event, shortcutName(item, plugin)); });
       cell.addEventListener("dragover", (event) => { if (dragged && dragged !== item.id) { event.preventDefault(); event.stopPropagation(); feedback.over(cell, event, "x"); } });
       cell.addEventListener("dragleave", (event) => feedback.leave(cell, event));
       cell.addEventListener("drop", (event) => {
@@ -280,5 +336,5 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
       handle.addEventListener("dragend", () => { dragged = null; dragState(false); feedback.clear(); });
     }
   }
-  if (!group.items.length) grid.createEl("p", { cls: "qh-card-empty", text: L("点击＋添加笔记、文件夹或网址。", "Add notes, folders or websites with +.") });
+  if (!group.items.length) grid.createEl("p", { cls: "qh-card-empty", text: L("点击＋添加笔记、文件夹、网址或命令。", "Add notes, folders, websites or commands with +.") });
 }

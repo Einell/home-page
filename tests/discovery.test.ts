@@ -23,10 +23,12 @@ describe("Home discovery cards", () => {
   it("keeps saved daily focus and countdown local across settings normalization", async () => {
     const { normalizeSettings } = await import("../src/settings");
     const saved = structuredClone(DEFAULT_SETTINGS);
-    saved.dailyFocus = { day: "2026-09-27", text: "Finish Home", done: true };
+    saved.dailyFocus = { day: "2026-09-27", items: [{ text: "Finish Home", done: true }] };
     saved.countdown = { label: "Launch", date: "2026-10-01" };
     const restored = normalizeSettings(saved);
     expect(restored.dailyFocus).toEqual(saved.dailyFocus);
+    // 0.4 saved one item as text/done.
+    expect(normalizeSettings({ dailyFocus: { day: "2026-09-27", text: "Old", done: false } }).dailyFocus).toEqual({ day: "2026-09-27", items: [{ text: "Old", done: false }] });
     expect(restored.countdown).toEqual(saved.countdown);
   });
 });

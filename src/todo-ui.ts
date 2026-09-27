@@ -1,13 +1,33 @@
-import { todoTarget, ensureTodoFile, pendingCarry, carrySelected, type CarryGroup } from "./todo-carry";
-import { underHeading, todayFirst } from "./todo-data";
+import { todoTarget, ensureTodoFile, pendingCarry, carrySelected, carryCandidates, todayHeading, type CarryGroup } from "./todo-carry";
+import { underHeading, todayFirst, reopenTodo, taskDisplay } from "./todo-data";
+import { undoNotice } from "./card-ui";
+import { bindOpen, openFromHome } from "./open";
 import { commandExists } from "./ecosystem";
 import { editorFor, update } from "./todo-files";
 import { Modal, Notice, Setting, SuggestModal, TFile, setIcon } from 'obsidian';
 import type QiaomuHomePlugin from './main';
 import { isChinese } from './i18n';
-import { appendTodo, completeTodo, readTodos } from './todo-data';
+import { appendTodo, completeTodo, readTodos, locateTodo } from './todo-data';
 const drafts = new WeakMap<QiaomuHomePlugin, Map<string, string>>();
 const L = (zh: string, en: string) => isChinese() ? zh : en;
+
+/** Adds a task (or a task block with indented children) where the Todo card writes: under today's heading or at the end of the task note. */
+export async function addTodoBlock(plugin: QiaomuHomePlugin, block: string): Promise<TFile> {
+  const path = await todoTarget(plugin);
+  const file = await ensureTodoFile(plugin, path);
+  const daily = plugin.settings.todoDaily && commandExists(plugin.app, 'daily-notes');
+  await update(plugin.app, file, content => daily ? underHeading(content, todayHeading(), block) : `${content}${content && !content.endsWith('\n') ? '\n' : ''}${block}\n`);
+  return file;
+}
+
+/** Completes a task line in `file` and offers Undo. The line is found again if the note moved it. */
+export async function completeWithUndo(plugin: QiaomuHomePlugin, file: TFile, item: { line: number; raw: string; text: string }, write: (current: string) => { text: string; done: string }): Promise<void> {
+  let done = '';
+  await update(plugin.app, file, current => { const result = write(current); done = result.done; return result.text; });
+  undoNotice(L(`已完成：${taskDisplay(item.text)}`, `Done: ${taskDisplay(item.text)}`),
+    () => update(plugin.app, file, current => reopenTodo(current, done, item.raw)),
+    { undo: L('撤销', 'Undo'), failed: L('无法撤销：任务行已被修改', 'Could not undo: the task line changed') });
+}
 class TodoPicker extends SuggestModal<TFile> {
   constructor(private plugin: QiaomuHomePlugin, private changed:()=>void = ()=>{}, private switchToFixed = true) { super(plugin.app); this.modalEl.addClass("qh-ui"); this.setPlaceholder(L('选择任务笔记', 'Choose task note')); }
   getSuggestions(query: string): TFile[] { return this.app.vault.getMarkdownFiles().filter(f => f.path.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(0, 50); }
@@ -24,6 +44,7 @@ export function renderTodoPreferences(container: HTMLElement, plugin: QiaomuHome
   if(plugin.settings.todoDaily) {
     const available=commandExists(plugin.app,'daily-notes');
     if(!available)container.createDiv({cls:'setting-item-description',text:L('未启用日记，暂存到固定任务笔记。','Daily notes is disabled; using the fixed note.')});
+    new Setting(container).setName(L('查找未完成任务的范围','Look back for unfinished tasks')).setDesc(L('只检查最近几天的日记，旧任务不会被一次性搬进今天。','Only recent daily notes are checked, so old tasks never flood today.')).addDropdown(dropdown=>dropdown.addOptions(Object.fromEntries([1,3,7,14,30].map(days=>[String(days),L(`最近 ${days} 天`,`Last ${days} day${days>1?'s':''}`)]))).setValue(String(plugin.settings.todoCarryDays)).onChange(value=>{plugin.settings.todoCarryDays=Number(value);save();}));
     new Setting(container).setName(L('自动结转未完成任务','Automatically carry unfinished tasks')).setDesc(L('打开主页时移入今天，原笔记留下日期链接。','Move pending tasks into today when Home opens, leaving dated links.')).addToggle(toggle=>toggle.setValue(plugin.settings.todoAutoCarry).setDisabled(!available).onChange(value=>{plugin.settings.todoAutoCarry=value;save();}));
   }
   const fallback=container.createEl('details',{cls:'qh-settings-details'});fallback.open=!plugin.settings.todoDaily;
@@ -61,7 +82,7 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   const card = parent.createDiv({ cls: 'qh-card qh-todo' }); card.dataset.module = 'todo';
   const head = card.createDiv({ cls: 'qh-card-head' });
   setIcon(head.createSpan({ cls: 'qh-card-icon' }), 'list-todo');
-  head.createSpan({ cls: 'qh-card-title', text: L('今日代办', 'Today’s tasks') });
+  head.createSpan({ cls: 'qh-card-title', text: L('今日待办', 'Today’s tasks') });
   const options=head.createEl('button',{cls:'qh-icon-button'});setIcon(options,'sliders-horizontal');options.createSpan({cls:'qh-sr-only',text:L('待办设置','Todo settings')});options.addEventListener('click',()=>new TodoOptions(plugin).open());
   const form = card.createEl('form', { cls: 'qh-todo-form' });
   const label = form.createEl('label', { cls: 'qh-sr-only', text: L('添加待办', 'Add task') });
@@ -75,8 +96,10 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   const carry = card.createDiv({cls:'qh-todo-carry'});
   const error = card.createDiv({ cls: 'qh-todo-error', attr: { role: 'status' } });
   const more = card.createEl('button', { cls: 'qh-todo-source', text: L('打开任务笔记', 'Open task note') });
-  more.addEventListener('click', () => { const file = app.vault.getAbstractFileByPath(path); if (file instanceof TFile) void app.workspace.getLeaf('tab').openFile(file); });
+  bindOpen(more, event => { const file = app.vault.getAbstractFileByPath(path); if (file instanceof TFile) void openFromHome(plugin, card, file, event); });
   let generation = 0, busy = false, moving = false, autoTried = false;
+  // Only these notes can change what the card shows; edits elsewhere never make it re-read.
+  let watched = new Set<string>();
   const move = async (groups:CarryGroup[]) => {
     if(moving)return;
     moving=true;error.empty();
@@ -94,20 +117,26 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
     path = await todoTarget(plugin);
     const file = app.vault.getAbstractFileByPath(path);
     const snapshot = file instanceof TFile ? editorFor(app, file)?.getValue() ?? await app.vault.cachedRead(file) : '';
+    const candidates = plugin.settings.todoDaily ? await carryCandidates(plugin, path).catch(() => []) : [];
     if (turn !== generation) return;
+    watched = new Set([path, plugin.settings.todoPath, ...candidates.map(entry => entry.path)]);
     more.setText(L('打开任务笔记', 'Open task note'));
     list.empty(); more.hidden = !(file instanceof TFile);
     const tasks = todayFirst(snapshot,readTodos(snapshot));
     if (!tasks.length) list.createDiv({ cls: 'qh-card-empty', text: L('暂无待办', 'No pending tasks') });
     for (const item of tasks.slice(0, limit)) {
       const row = list.createEl('label', { cls: 'qh-todo-row' });
-      const checkbox = row.createEl('input', { type: 'checkbox' }); row.createSpan({ text: item.text });
+      const checkbox = row.createEl('input', { type: 'checkbox' }); row.createSpan({ text: taskDisplay(item.text) });
       checkbox.addEventListener('change', () => {
         if (!(file instanceof TFile)) return;
-        checkbox.disabled = true;
-        void update(app, file, current => completeTodo(current, snapshot, item)).then(refresh).catch(() => {
-          checkbox.checked = false; checkbox.disabled = false;
-          error.setText(L('笔记已变化或写入失败，请重新打开主页后重试。', 'Note changed or write failed. Reopen Home and try again.'));
+        checkbox.disabled = true; row.addClass('is-done');
+        void completeWithUndo(plugin, file, item, current => {
+          const text = completeTodo(current, snapshot, item);
+          return { text, done: text.split('\n')[locateTodo(current, item)] };
+        }).then(refresh).catch(() => {
+          checkbox.checked = false; checkbox.disabled = false; row.removeClass('is-done');
+          error.setText(L('这条任务在笔记里已被修改，列表已刷新，请再试一次。', 'This task changed in the note. The list was refreshed; try again.'));
+          void refresh().catch(() => {});
         });
       });
     }
@@ -129,14 +158,14 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
     event.preventDefault(); if (busy || !input.value.trim()) return;
     const text = input.value; busy = true; submit.disabled = true; input.disabled = true; error.empty();
     void (async () => {
-      path = await todoTarget(plugin);
-      const file = await ensureTodoFile(plugin,path);
-      const daily=plugin.settings.todoDaily && commandExists(app,'daily-notes');
-      await update(app, file, content => daily ? underHeading(content,'今日待办',appendTodo('',text).trimEnd()) : appendTodo(content,text));
+      await addTodoBlock(plugin, appendTodo('', text).trimEnd());
       input.value = ''; if (draft.get(draftKey) === text) draft.delete(draftKey); await refresh();
     })().catch(() => error.setText(L('保存失败，内容已保留，请检查任务笔记。', 'Could not save. Your input is retained. Check the task note.')))
       .finally(() => { busy = false; submit.disabled = false; input.disabled = false; if (input.isConnected) input.focus(); });
   });
-  card.addEventListener('qh-todo-refresh', () => { void refresh().catch(() => error.setText(L('无法读取任务笔记', 'Could not read task note'))); });
+  card.addEventListener('qh-todo-refresh', event => {
+    const changed = (event as CustomEvent<{ path?: string }>).detail?.path;
+    if (changed && !watched.has(changed)) return;
+    void refresh().catch(() => error.setText(L('无法读取任务笔记', 'Could not read task note'))); });
   void refresh().catch(() => error.setText(L('无法读取任务笔记', 'Could not read task note')));
 }

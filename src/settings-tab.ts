@@ -241,10 +241,17 @@ export class HomeSettingTab extends PluginSettingTab {
           settings.captureInboxPath = value.trim(); await save(false);
         }));
     }
+    new Setting(containerEl).setName(L("记录格式", "Line format"))
+      .addDropdown(dropdown => dropdown.addOptions({ plain: L("普通列表 - 内容", "List item - text"), time: L("带时间 - 14:30 内容", "With time - 14:30 text"), task: L("待办 - [ ] 内容", "Task - [ ] text") })
+        .setValue(settings.captureFormat).onChange(async value => { settings.captureFormat = value as "plain" | "time" | "task"; await save(false); }));
     new Setting(containerEl).setName(L("新笔记位置","Where new notes go")).setHeading();
     folderDropdown(containerEl,this.plugin,L("Home 新建的笔记","Notes created by Home"),L("Obsidian 默认新笔记位置","Obsidian's new-note location"),settings.createFolder,value=>{settings.createFolder=value;void save(false);})
       .setDesc(createFragment(f=>{f.createDiv({text:L("视频笔记、本周回顾和模板速建默认放在这里；卡片设置里可单独指定。","Video notes, weekly reviews and template notes go here unless a card chooses its own folder.")});}));
-    new Setting(containerEl).setName(L("今日代办","Today’s tasks")).setHeading();
+    new Setting(containerEl).setName(L("打开笔记","Opening notes")).setHeading();
+    new Setting(containerEl).setName(L("从卡片打开笔记时用新标签页","Open notes from cards in a new tab"))
+      .setDesc(L("关闭时在主页所在的标签页打开，像浏览器起始页；⌘/Ctrl 点击或中键点击总是新标签页。","Off: open in Home's own tab, like a browser start page. ⌘/Ctrl-click or middle-click always opens a new tab."))
+      .addToggle(toggle=>toggle.setValue(settings.openInNewTab).onChange(async value=>{settings.openInNewTab=value;await save(false);}));
+    new Setting(containerEl).setName(L("今日待办","Today’s tasks")).setHeading();
     renderTodoPreferences(containerEl,this.plugin,()=>this.renderSettings());
   }
   private renderAbout(containerEl: HTMLElement): void {

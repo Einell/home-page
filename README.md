@@ -14,7 +14,7 @@ A calm start page for your notes, daily tasks, and everything you want to return
 
 **[立即安装 →](https://community.obsidian.md/plugins/qiaomu-home)** · [下载最新版](https://github.com/joeseesun/qiaomu-home/releases/latest) · [反馈与建议](https://github.com/joeseesun/qiaomu-home/issues)
 
-![乔木 Home：自定义欢迎语、今日代办、常用入口和独立页签](docs/images/home.png)
+![乔木 Home：自定义欢迎语、今日待办、常用入口和独立页签](docs/images/home.png)
 
 **一个起点。记下一笔，完成一件事，接着读昨天的书。**
 
@@ -61,7 +61,7 @@ A calm start page for your notes, daily tasks, and everything you want to return
 | 分类 | 卡片 |
 | --- | --- |
 | 今天 | 今日日记、今日重点（可勾选完成）、快速记录、收件箱、本周回顾、日记日历、今日时间轴、今日习惯 |
-| 任务与专注 | 今日代办、今日到期、逾期任务、项目下一步、近期里程碑、目标进度、专注计时（完成后可记入日记）、倒计时、日程（.ics） |
+| 任务与专注 | 今日待办、今日到期、逾期任务、项目下一步、近期里程碑、目标进度、专注计时（完成后可记入日记）、倒计时、日程（.ics） |
 | 笔记与回顾 | 最近打开、最近修改、回顾一篇、固定笔记、笔记工作集、模板速建、搜索预设、每日一问、常用片段、视频笔记 |
 | 整理知识库 | 常用标签、待连接笔记、待补全链接、笔记活动热力图 |
 | 搜索与学习 | 多站搜索、找电子书、找视频与电影、Spotify 搜索、学 AI、找论文、查词、翻译、GitHub 待办 |
@@ -73,22 +73,25 @@ A calm start page for your notes, daily tasks, and everything you want to return
 
 ### 今天的事，写在今天的日记里
 
-在 **今日代办** 输入一件事，回车保存；做完直接勾选。
+在 **今日待办** 输入一件事，回车保存；做完直接勾选。
 
 - 默认写入今日日记，沿用核心日记的目录、日期格式和模板。
 - 以前没完成的任务，可以选择结转或全部移入今天；原日记保留指向目标日期的记录。
 - 可选自动结转，默认关闭；也可以指定一篇固定任务笔记。
-- 任务是普通 Markdown 复选框，离开 Home 也能继续编辑。目前无需 Tasks，也未接入 Tasks。
+- 只检查最近几天的日记（默认 7 天，可选 1–30 天），旧任务不会一次性涌进今天。
+- 勾选后可在提示里一键撤销；笔记里任务位置变了也能找到它。
+- 任务是普通 Markdown 复选框，离开 Home 也能继续编辑。**今日到期** 卡片识别 Tasks 的 📅 / ⏳ / 🛫 和 Dataview 的 `[due:: ]`；启用 Tasks 插件时，勾选会写入完成日期并生成重复任务的下一次，逾期任务可一键改到今天。
+- **今日重点** 最多三件，写在今日日记的 `focus` / `focus_done` 属性里，第二天能看到昨天没完成的；**习惯打卡** 支持「喝水:8」这样的计次习惯和最近 7 天记录。
 
 点击搜索框旁的 **今日**，即可打开今天的日记；不存在时自动创建。
 
 ### 常用入口，一下就到
 
-笔记、文件夹、网址和动态今日日记，都能成为快捷入口。默认提供 **今日日记、X、谷歌**，你可以编辑、排序或删除，也能建立多个分组。
+笔记、文件夹、网址（含 `obsidian://` 链接）、Obsidian 命令和动态今日日记，都能成为快捷入口。默认提供 **今日日记、X、谷歌**，你可以编辑、排序或删除，也能建立多个分组。
 
 ![快捷入口：平铺选择类型，再填写目标，按需自定义名称和图标](docs/images/shortcuts.png)
 
-先选类型，再填写目标；名称和图标需要时再展开。库内文件改名会更新目标，日记入口始终指向当天。网址使用简洁图标，可手动挑选，不自动抓取网站 Logo。
+先选类型，再填写目标；名称和图标需要时再展开。库内文件改名会更新目标，日记入口始终指向当天。网址默认使用简洁图标，不自动抓取网站 Logo；也可以为某个入口选「网站图标」，或填任意 Lucide 图标名。
 
 ### 一张壁纸，一句属于你的话
 
@@ -135,7 +138,7 @@ Home 独立可用。装上相应的乔木插件后，主页还能显示它们的
 
 - **无需账号，没有遥测。** 设置保存在本库插件数据中，待办和快速记录写入 Markdown。
 - **搜索在本地执行。** 只有主动调用 Agent 时，问题才交给它按你的配置处理。
-- **外部图片按需加载。** 壁纸来自 `images.unsplash.com`；自选 Unsplash 搜索使用 `api.unsplash.com`，密钥存在 Obsidian 密钥库。关于页二维码来自 `radio.qiaomu.ai`。
+- **外部图片按需加载。** 壁纸来自 `images.unsplash.com`；自选 Unsplash 搜索使用 `api.unsplash.com`，密钥存在 Obsidian 密钥库。关于页二维码来自 `radio.qiaomu.ai`。只有你为快捷入口选择「网站图标」时，才会把该网址的域名发给 `icons.duckduckgo.com` 取图标。
 - **联网卡片需要你先设置。** 天气卡片在你选择城市后才向 Open-Meteo 查询；日程卡片只有填写订阅地址时才请求该地址，本地 .ics 文件不联网。白噪音在本机生成。
 - **GitHub 与社区列表按需联网。** 连接 GitHub 后，GitHub 待办卡片用你的令牌请求 `api.github.com`（每 5 分钟最多一次）；「添加内容 → 社区」只在打开该分类时从 `raw.githubusercontent.com` 读取社区组件列表。
 - **插件安装由你决定。** 推荐模块只打开市场或设置入口，不会自动安装、启用其他插件。
@@ -207,7 +210,7 @@ The screenshots above are actual desktop UI with sample content, a custom headin
 
 No account or telemetry. Settings stay in the vault's plugin data; tasks and captures remain editable Markdown. Search runs locally. Text is handed to Agent only when you explicitly invoke it, and Agent then follows its own configuration.
 
-After you connect GitHub, the GitHub card calls `api.github.com` with your token (at most every five minutes); the Community category in Add cards fetches its list from `raw.githubusercontent.com` only when opened. The weather card queries Open-Meteo only after you choose a city; the agenda card fetches a subscription URL only if you enter one (local .ics files stay offline). Wallpaper images load from `images.unsplash.com`. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
+After you connect GitHub, the GitHub card calls `api.github.com` with your token (at most every five minutes); the Community category in Add cards fetches its list from `raw.githubusercontent.com` only when opened. The weather card queries Open-Meteo only after you choose a city; the agenda card fetches a subscription URL only if you enter one (local .ics files stay offline). Wallpaper images load from `images.unsplash.com`. A shortcut's site icon is fetched from `icons.duckduckgo.com` (sending only the host name) only if you choose “Site icon” for that shortcut. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
 
 Desktop behavior has been checked in real Obsidian test vaults. Mobile has not been verified on a physical device. Daily tasks fall back to a fixed task note when the core Daily Notes plugin is disabled. If another plugin manages your startup page or new tabs, configure only one to own that entry point.
 
