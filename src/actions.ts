@@ -1,4 +1,4 @@
-import { openTodayNote } from "./today";
+import { ensureParent, openTodayNote } from "./today";
 import { Notice, TFile, normalizePath, type App, type WorkspaceLeaf } from "obsidian";
 import { commandExists, runCommand } from "./ecosystem";
 import { t } from "./i18n";
@@ -28,11 +28,11 @@ export function builtinActions(app: App): CreateAction[] {
   return actions;
 }
 
-/** New untitled note in the current (Home) tab, exactly like Obsidian's own "new note in current tab". */
-export async function newNote(app: App, leaf: WorkspaceLeaf): Promise<void> {
+/** New untitled note in the current (Home) tab: Home's own folder when set, otherwise Obsidian's "new note in current tab". */
+export async function newNote(app: App, leaf: WorkspaceLeaf, folder = ""): Promise<void> {
   app.workspace.setActiveLeaf(leaf, { focus: true });
-  if (runCommand(app, "file-explorer:new-file-in-current-tab")) return;
-  await createNamedNote(app, leaf, t("new.untitled"));
+  if (!folder && runCommand(app, "file-explorer:new-file-in-current-tab")) return;
+  await createNamedNote(app, leaf, t("new.untitled"), folder, true);
 }
 
 async function availablePath(app: App, folder: string, name: string, extension: string): Promise<string> {
@@ -44,13 +44,14 @@ async function availablePath(app: App, folder: string, name: string, extension: 
   throw new Error("no free file name");
 }
 
-/** Creates "<name>.md" in the user's default new-note folder and opens it in the given tab. */
-export async function createNamedNote(app: App, leaf: WorkspaceLeaf, name: string): Promise<void> {
+/** Creates "<name>.md" in Home's folder (or Obsidian's default new-note folder) and opens it in the given tab. */
+export async function createNamedNote(app: App, leaf: WorkspaceLeaf, name: string, folder = "", rename = false): Promise<void> {
   try {
-    const folder = app.fileManager.getNewFileParent("").path;
-    const path = await availablePath(app, folder === "/" ? "" : folder, name || t("new.untitled"), "md");
+    const parent = folder.replace(/^\/+|\/+$/g, "") || app.fileManager.getNewFileParent("").path;
+    const path = await availablePath(app, parent === "/" ? "" : parent, name || t("new.untitled"), "md");
+    await ensureParent(app, path);
     const file = await app.vault.create(path, "");
-    await leaf.openFile(file, { active: true, state: { mode: "source" } });
+    await leaf.openFile(file, { active: true, state: { mode: "source" }, eState: rename ? { rename: "all" } : undefined });
   } catch (error) {
     new Notice(t("error.create", { message: error instanceof Error ? error.message : String(error) }));
   }

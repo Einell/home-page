@@ -464,7 +464,7 @@ export class HomeView extends ItemView {
       hint: t("search.hint.capture"), run: () => void this.capture(query) });
     if (!notes.some((note) => note.title.toLowerCase() === query.toLowerCase())) {
       const name = noteNameFromQuery(query);
-      if (name) this.addRow(commands, { icon: "file-plus", title: t("search.create", { q: name }), run: () => void createNamedNote(this.app, this.leaf, name) });
+      if (name) this.addRow(commands, { icon: "file-plus", title: t("search.create", { q: name }), run: () => void createNamedNote(this.app, this.leaf, name, this.plugin.settings.createFolder) });
     }
     if (canAsk(this.app)) {
       this.addRow(commands, { icon: "sparkles", title: t("search.ask", { q: query }), hint: t("search.hint.ask"), run: () => void askAgent(this.app, query) });
@@ -532,7 +532,7 @@ export class HomeView extends ItemView {
     const main = split.createEl("button", { cls: "qh-pill-button qh-new" });
     setIcon(main.createSpan({ cls: "qh-pill-icon" }), "plus");
     main.createSpan({ cls: "qh-pill-text", text: t("new.note") });
-    main.addEventListener("click", () => void newNote(this.app, this.leaf));
+    main.addEventListener("click", () => void newNote(this.app, this.leaf, this.plugin.settings.createFolder));
     const hidden = new Set(settings.hiddenActions);
     const more = actions.filter((action) => action !== daily && !hidden.has(action.key));
     const chevron = split.createEl("button", { cls: "qh-pill-button qh-new-more" });
