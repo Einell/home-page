@@ -375,7 +375,7 @@ export class ModuleOptionsModal extends Modal {
     if (["due-today", "overdue", "milestones"].includes(this.moduleId)) this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("识别任务中的 📅 YYYY-MM-DD 或 [due:: YYYY-MM-DD]。", "Recognizes 📅 YYYY-MM-DD or [due:: YYYY-MM-DD] in tasks.") });
     if (config?.path) {
       const setting = new Setting(this.contentEl).setName(this.moduleId === "template-create" ? L("模板笔记", "Template note") : L("来源笔记", "Source note")).setDesc(options.path || L("尚未选择", "Not selected"));
-      setting.addButton(button => button.setButtonText(L("选择笔记", "Choose note")).onClick(() => new FilePicker(this.plugin, ["md"], file => { void persist({ path: file.path }).then(() => setting.setDesc(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).path ?? "")); }).open()));
+      setting.addButton(button => button.setButtonText(L("选择笔记", "Choose note")).onClick(() => new FilePicker(this.plugin, ["md"], file => { void persist({ path: file.path }).then(() => { setting.setDesc(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).path ?? ""); }); }).open()));
     }
     if (this.moduleId === "habit-checkin") { renderHabitEditor(this.contentEl, this.plugin, this.pageId); return; }
     if (this.moduleId === "working-set") { this.contentEl.createEl("p", { text: L("在卡片上保存当前笔记组；恢复时会跳过已打开的笔记。", "Save open notes on the card. Restore skips notes already open.") }); return; }
@@ -421,8 +421,9 @@ export class ModuleOptionsModal extends Modal {
     if (this.moduleId === "recently-modified") folderDropdown(this.contentEl, this.plugin, L("笔记范围", "Note folder"), L("整个知识库", "Whole vault"), options.folder ?? "", value => { void persist({ folder: value }); });
     if (["daily-preview", "daily-timeline", "daily-calendar", "habit-checkin"].includes(this.moduleId)) {
       const info = new Setting(this.contentEl).setName(L("日记位置", "Daily notes")).setDesc(L("读取中…", "Loading…"));
-      void dailyOptions(this.app).then(config => info.setDesc(L(`文件夹：${config.folder || "/"} · 格式：${config.format || "YYYY-MM-DD"}（由日记核心插件设置）`, `Folder: ${config.folder || "/"} · Format: ${config.format || "YYYY-MM-DD"} (Daily notes core plugin)`)))
-        .catch(() => info.setDesc(L("日记核心插件未启用", "Daily notes is not enabled")));
+      // Braced bodies: Obsidian's Setting has a `then` method, so returning it from a promise callback loops forever.
+      void dailyOptions(this.app).then(config => { info.setDesc(L(`文件夹：${config.folder || "/"} · 格式：${config.format || "YYYY-MM-DD"}（由日记核心插件设置）`, `Folder: ${config.folder || "/"} · Format: ${config.format || "YYYY-MM-DD"} (Daily notes core plugin)`)); })
+        .catch(() => { info.setDesc(L("日记核心插件未启用", "Daily notes is not enabled")); });
       info.addButton(button => button.setButtonText(L("日记设置", "Daily notes settings")).onClick(() => {
         const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
         setting?.open?.(); setting?.openTabById?.("daily-notes");
