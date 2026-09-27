@@ -1,4 +1,4 @@
-import { presetPage, type HomePage, type HomeSettings } from "./settings";
+import { presetPage, type HomePage, type HomeSettings, type PageTemplate } from "./settings";
 
 export function addPage(settings: HomeSettings, name: string): HomePage {
   const page: HomePage = { id: crypto.randomUUID(), name: name.trim().slice(0, 80),
@@ -45,9 +45,18 @@ export function reorderPage(settings: HomeSettings, id: string, before: string, 
   return true;
 }
 
-export function addPresetPage(settings: HomeSettings, kind: "reading" | "entertainment"): HomePage {
-  const page=presetPage(kind);
-  page.id=crypto.randomUUID();
-  if(page.shortcutGroups.length){const group=page.shortcutGroups[0],old=`shortcut:${group.id}`;group.id=crypto.randomUUID();page.moduleOptions[`shortcut:${group.id}`]=page.moduleOptions[old];delete page.moduleOptions[old];page.moduleOrder=page.moduleOrder.map(id=>id===old?`shortcut:${group.id}`:id);}
-  settings.pages.push(page);settings.tabsEnabled=true;settings.activePageId=page.id;return page;
+/** Adds a template page with fresh ids, so the same template can be added more than once. */
+export function addPresetPage(settings: HomeSettings, kind: PageTemplate, name?: string): HomePage {
+  const page = presetPage(kind);
+  page.id = crypto.randomUUID();
+  if (name?.trim()) page.name = name.trim().slice(0, 80);
+  for (const group of page.shortcutGroups) {
+    const old = `shortcut:${group.id}`;
+    group.id = crypto.randomUUID();
+    const key = `shortcut:${group.id}`;
+    page.moduleOptions[key] = page.moduleOptions[old]; delete page.moduleOptions[old];
+    page.moduleOrder = page.moduleOrder.map(id => id === old ? key : id);
+  }
+  settings.pages.push(page); settings.tabsEnabled = true; settings.activePageId = page.id;
+  return page;
 }

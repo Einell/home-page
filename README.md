@@ -30,7 +30,7 @@ A calm start page for your notes, daily tasks, and everything you want to return
 2. 点击 **安装 → 启用**，打开一个新标签页。
 3. 点击页签右侧的 **齿轮 → 添加内容**，放上你最常用的模块。
 
-新安装预设 **主页、阅读、娱乐**。先用默认布局就好；想调整时，内容、顺序、名称和壁纸都可以改。已有用户升级会保留自己的布局。
+新安装预设 **主页、专注、知识、阅读、娱乐、探索** 六个页签，卡片已经放好，打开就能用。新增页签时可以选模板或从空白开始；内容、顺序、名称和壁纸都可以改。已有用户升级会保留自己的布局，也可以随时从模板添加页签。
 
 <details>
 <summary>手动安装 / 更新</summary>
@@ -55,6 +55,21 @@ A calm start page for your notes, daily tasks, and everything you want to return
 - **你的页签**：写作、研究、项目……按自己的工作方式命名。
 
 齿轮进入布置模式，拖动卡片和页签调整顺序；也可以通过菜单前移、后移。阅读和娱乐页签可以改名或删除，主页始终保留。缺少配套插件时，模块库会给出安装入口。
+
+模块库现有 50 多张卡片，按用途分成 8 类，可搜索、按分类筛选、只看未添加，并在弹层里直接添加或移除：
+
+| 分类 | 卡片 |
+| --- | --- |
+| 今天 | 今日日记、今日重点（可勾选完成）、快速记录、收件箱、本周回顾、日记日历、今日时间轴、今日习惯 |
+| 任务与专注 | 今日代办、今日到期、逾期任务、项目下一步、近期里程碑、目标进度、专注计时（完成后可记入日记）、倒计时、日程（.ics） |
+| 笔记与回顾 | 最近打开、最近修改、回顾一篇、固定笔记、笔记工作集、模板速建、搜索预设、每日一问、常用片段、视频笔记 |
+| 整理知识库 | 常用标签、待连接笔记、待补全链接、笔记活动热力图 |
+| 搜索与学习 | 多站搜索、找电子书、找视频与电影、Spotify 搜索、学 AI、找论文、查词、翻译、GitHub 待办 |
+| 小工具 | 时间进度、世界时钟、天气、每日一句、专注白噪音 |
+
+另有 **插件联动** 卡片：QuickAdd 动作、Dataview 查询、看板、Excalidraw 手绘、间隔复习和 Omnisearch 全文搜索。没装对应插件时，卡片会说明用途并给出安装按钮，装好后自动变成实时内容。**GitHub 待办** 可连接账号（令牌保存在 Obsidian 密钥库），直接列出待你审阅的 PR 和分配给你的 Issue。
+
+页签右侧的方块按钮可以直接打开「添加内容」。所有新卡片在已有页签上默认关闭，按页添加。读写笔记的卡片都可以在设置里选择文件夹或笔记；Home 新建的笔记默认位置可在插件设置里统一指定。卡片菜单的「组件设置」可选择来源笔记、文件夹、显示的来源网站等。跨站卡片只在点击时打开来源网站；电子书下载、视频观看、音乐播放都由来源网站处理，Spotify 与 GitHub 卡片是入口，不读取账户数据。
 
 ### 今天的事，写在今天的日记里
 
@@ -121,6 +136,8 @@ Home 独立可用。装上相应的乔木插件后，主页还能显示它们的
 - **无需账号，没有遥测。** 设置保存在本库插件数据中，待办和快速记录写入 Markdown。
 - **搜索在本地执行。** 只有主动调用 Agent 时，问题才交给它按你的配置处理。
 - **外部图片按需加载。** 壁纸来自 `images.unsplash.com`；自选 Unsplash 搜索使用 `api.unsplash.com`，密钥存在 Obsidian 密钥库。关于页二维码来自 `radio.qiaomu.ai`。
+- **联网卡片需要你先设置。** 天气卡片在你选择城市后才向 Open-Meteo 查询；日程卡片只有填写订阅地址时才请求该地址，本地 .ics 文件不联网。白噪音在本机生成。
+- **GitHub 与社区列表按需联网。** 连接 GitHub 后，GitHub 待办卡片用你的令牌请求 `api.github.com`（每 5 分钟最多一次）；「添加内容 → 社区」只在打开该分类时从 `raw.githubusercontent.com` 读取社区组件列表。
 - **插件安装由你决定。** 推荐模块只打开市场或设置入口，不会自动安装、启用其他插件。
 
 ### 使用说明与兼容性
@@ -128,6 +145,10 @@ Home 独立可用。装上相应的乔木插件后，主页还能显示它们的
 桌面端已在真实 Obsidian 测试库验证；移动端尚未完成真机验收。核心日记未启用时，待办使用固定任务笔记。其他启动页插件可能接管同一入口，建议只让一个插件负责启动页。
 
 遇到问题？请在 [Issues](https://github.com/joeseesun/qiaomu-home/issues) 附上版本、系统、复现步骤和去除私人信息的截图。[版本更新记录](https://github.com/joeseesun/qiaomu-home/releases) 可查看每次发布的变化。
+
+## 社区组件
+
+任何人都可以为乔木 Home 做组件：在「添加内容 → 社区」复制开发提示词交给你的 AI Agent，做好后[提交到社区](https://github.com/joeseesun/qiaomu-home/issues/new?template=submit-extension.yml)，审核通过后所有用户都能在「社区」分类里找到它。详见 [用 AI 开发组件](docs/build-an-extension.md) 和 [社区组件目录](registry/README.md)。
 
 ## 开发与参与
 
@@ -172,6 +193,7 @@ Requires **Obsidian 1.11.4 or newer**. For manual installation, download `main.j
 | --- | --- |
 | Independent pages | Home, Reading, and Entertainment presets on new installs; rename, reorder, add, or remove optional pages. Existing layouts survive upgrades. |
 | Module library | Preview modules, add them to a page, and configure their visibility and item count. Cards default to three items. |
+| Optional cards | 50+ opt-in cards in eight categories — today, tasks & focus, notes & review, vault upkeep, search & learning, utilities, shortcuts and integrations — including weekly review, flashcards, snippets, video notes, an .ics agenda, weather, world clock, time progress and ambient noise. Filter by category, show only cards not yet added, and add or remove in place. |
 | Daily tasks | Add and complete plain Markdown tasks in today's daily note, or a fixed note. Move unfinished tasks forward manually; automatic carry-forward is optional and off by default. |
 | Personal shortcuts | Open a note, folder, website, or today's daily note. Choose names and icons and reorder your entries. |
 | Search and capture | Find local notes by name, alias, or path. `Shift+Enter` captures text into an Inbox or daily note. |
@@ -185,7 +207,7 @@ The screenshots above are actual desktop UI with sample content, a custom headin
 
 No account or telemetry. Settings stay in the vault's plugin data; tasks and captures remain editable Markdown. Search runs locally. Text is handed to Agent only when you explicitly invoke it, and Agent then follows its own configuration.
 
-Wallpaper images load from `images.unsplash.com`. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
+After you connect GitHub, the GitHub card calls `api.github.com` with your token (at most every five minutes); the Community category in Add cards fetches its list from `raw.githubusercontent.com` only when opened. The weather card queries Open-Meteo only after you choose a city; the agenda card fetches a subscription URL only if you enter one (local .ics files stay offline). Wallpaper images load from `images.unsplash.com`. Optional Unsplash search uses `api.unsplash.com` and a key stored in Obsidian SecretStorage. About-page QR images load from `radio.qiaomu.ai` when that page is opened. Recommended plugins are never installed or enabled automatically.
 
 Desktop behavior has been checked in real Obsidian test vaults. Mobile has not been verified on a physical device. Daily tasks fall back to a fixed task note when the core Daily Notes plugin is disabled. If another plugin manages your startup page or new tabs, configure only one to own that entry point.
 

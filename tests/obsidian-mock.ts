@@ -19,3 +19,13 @@ export class TFile {}
 export function moment() { return { format: (pattern: string) => pattern.replace("YYYY", "2026").replace("MM", "09").replace("DD", "26") }; }
 export function normalizePath(path: string): string { return path.replace(/\/+/g, "/").replace(/^\/|\/$/g, ""); }
 export class MarkdownView {}
+export class Modal { constructor(public app?: unknown) {} }
+export class FuzzySuggestModal<T> extends Modal { declare items?: T[] }
+export class Notice { constructor(_message?: string) {} }
+export class Setting {}
+export class SecretComponent {}
+export class TFolder {}
+export class Menu {}
+export function setIcon(): void {}
+export function setTooltip(): void {}
+export function getAllTags(): string[] { return []; }

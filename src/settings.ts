@@ -1,3 +1,9 @@
+import { DISCOVERY_MODULES, parseSearchTemplates, type SearchTemplate } from "./discovery";
+import { EXTRA_MODULES } from "./extra-catalog";
+import { INTEGRATIONS } from "./integration-catalog";
+import { calendarUrl, clockMinutes, validZone, type WeatherLocation, type ZoneEntry } from "./extra-data";
+import { PRODUCTIVITY_MODULES } from "./productivity-catalog";
+import { normalizeFocus, type FocusSession } from "./productivity-data";
 import { isChinese } from "./i18n";
 import { defaultHomeShortcuts, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
@@ -22,7 +28,18 @@ export interface CustomCommand {
   icon: string;
 }
 
-export interface ModuleOptions { visible: boolean; limit: number }
+export interface ModuleOptions {
+  visible: boolean; limit: number; folder?: string; path?: string; query?: string; sites?: string[]; paths?: string[]; customSites?: SearchTemplate[];
+  /** Moment format, e.g. the weekly note name. */
+  format?: string;
+  /** Remote .ics calendar; fetched only after the user saves it. */
+  url?: string;
+  zones?: ZoneEntry[];
+  /** Work hours as HH:mm. */
+  start?: string; end?: string;
+  location?: WeatherLocation;
+  unit?: "c" | "f";
+}
 export const DEFAULT_MODULE_OPTIONS: ModuleOptions = { visible: true, limit: 3 };
 
 export interface HomePage {
@@ -68,17 +85,48 @@ export interface HomeSettings {
   captureTarget: "daily" | "inbox";
   captureInboxPath: string;
   todoPath: string;
+  /** Where Home puts notes it creates (video notes, weekly reviews, templates) unless a card chooses its own folder. */
+  createFolder: string;
+  /** SecretStorage id holding a GitHub token; never the token itself. */
+  githubSecret: string;
   todoDaily: boolean;
   todoAutoCarry: boolean;
+  /** Empty string reviews the whole vault except common template folders. */
+  reviewFolder: string;
+  focusSession: FocusSession;
+  /** Append a line to today's daily note when a focus session completes. */
+  focusLog: boolean;
+  /** Finished sessions today, for the focus card. */
+  focusStats: { day: string; count: number; minutes: number };
+  dailyFocus: { day: string; text: string; done: boolean };
+  ambient: { kind: "white" | "pink" | "brown"; volume: number };
+  countdown: { label: string; date: string };
   hiddenRecommendations: string[];
 }
 
 export const BUILTIN_ACTIONS = ["builtin:daily", "builtin:canvas", "builtin:base", "builtin:folder", "builtin:import"] as const;
 
-export function presetPage(kind: "home" | "reading" | "entertainment"): HomePage {
-  const names = {home: ["主页", "Home"], reading: ["阅读", "Reading"], entertainment: ["娱乐", "Entertainment"]};
-  const modules = kind === "home" ? ["todo", "recent", "beginner-plugins"] : kind === "reading" ? ["qiaomu-reader", "qiaomu-ai-rss"] : ["qiaomu-radio"];
-  const page: HomePage = { id: kind, name: names[kind][isChinese() ? 0 : 1], moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
+export type PageTemplate = "home" | "focus" | "knowledge" | "reading" | "entertainment" | "explore";
+/** Ready-made pages. Every card here works without setup or explains its one missing step (a plugin, a note). */
+export const PAGE_TEMPLATES: Record<PageTemplate, { zh: string; en: string; icon: string; descZh: string; descEn: string; modules: string[] }> = {
+  home: { zh: "主页", en: "Home", icon: "house", descZh: "今日重点、待办、快速记录和常用入口", descEn: "Focus, tasks, capture and shortcuts",
+    modules: ["daily-focus", "todo", "quick-capture", "recent"] },
+  focus: { zh: "专注", en: "Focus", icon: "timer", descZh: "专注计时、白噪音、到期与逾期任务", descEn: "Timer, ambient sound, due and overdue tasks",
+    modules: ["focus-timer", "ambient-sound", "due-today", "overdue", "day-progress", "countdown"] },
+  knowledge: { zh: "知识", en: "Knowledge", icon: "library", descZh: "最近修改、回顾旧笔记、周回顾和整理", descEn: "Recent edits, review, weekly review and upkeep",
+    modules: ["recently-modified", "review-note", "weekly-review", "activity-heatmap", "tag-cloud", "orphan-notes"] },
+  reading: { zh: "阅读", en: "Reading", icon: "book-open", descZh: "继续阅读、未读文章、找书找论文、查词翻译", descEn: "Reading, unread articles, books, papers, words",
+    modules: ["qiaomu-reader", "qiaomu-ai-rss", "book-finder", "paper-finder", "word-finder", "translate"] },
+  entertainment: { zh: "娱乐", en: "Entertainment", icon: "clapperboard", descZh: "电台、找视频电影、音乐和常用网站", descEn: "Radio, video, music and favorite sites",
+    modules: ["qiaomu-radio", "watch-finder", "music-finder"] },
+  explore: { zh: "探索", en: "Explore", icon: "compass", descZh: "新手必装插件、QuickAdd 动作、多站搜索、学 AI", descEn: "Starter plugins, QuickAdd, search and AI courses",
+    modules: ["beginner-plugins", "quickadd-actions", "multi-search", "ai-learning", "world-clock"] },
+};
+
+export function presetPage(kind: PageTemplate): HomePage {
+  const template = PAGE_TEMPLATES[kind];
+  const modules = template.modules;
+  const page: HomePage = { id: kind, name: isChinese() ? template.zh : template.en, moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
   if (kind === "home") {
     const group = defaultHomeShortcuts(isChinese());
     page.shortcutGroups.push(group);
@@ -115,13 +163,22 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   activePageId: "home",
   homePageId: "home",
   homeShortcutsSeeded: true,
-  pages: [presetPage("home"), presetPage("reading"), presetPage("entertainment")],
+  pages: (["home", "focus", "knowledge", "reading", "entertainment", "explore"] as const).map(presetPage),
   showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
   todoPath: "Home Todo.md",
+  createFolder: "",
+  githubSecret: "",
   todoDaily: true,
   todoAutoCarry: false,
+  reviewFolder: "",
+  focusSession: normalizeFocus(null),
+  focusLog: false,
+  focusStats: { day: "", count: 0, minutes: 0 },
+  dailyFocus: { day: "", text: "", done: false },
+  ambient: { kind: "brown", volume: 0.4 },
+  countdown: { label: "", date: "" },
   hiddenRecommendations: [],
 };
 
@@ -157,8 +214,12 @@ export function moduleOptions(settings: HomeSettings, id: string, pageId?: strin
   if (Object.hasOwn(page.moduleOptions, id)) return page.moduleOptions[id];
   const parent = moduleSource(id);
   if (parent && Object.hasOwn(page.moduleOptions, parent)) return page.moduleOptions[parent];
-  return { ...DEFAULT_MODULE_OPTIONS, visible: ["todo", "beginner-plugins"].includes(id) ? false : page.defaultVisible };
+  return { ...DEFAULT_MODULE_OPTIONS, visible: OPT_IN.has(id) ? false : page.defaultVisible };
 }
+
+/** Built-in cards never appear on their own, even on pages that show newly discovered plugin sections. */
+const OPT_IN = new Set([...Object.keys(PRODUCTIVITY_MODULES), ...Object.keys(EXTRA_MODULES), ...Object.keys(INTEGRATIONS), ...Object.keys(DISCOVERY_MODULES),
+  "todo", "beginner-plugins", "daily-preview", "recently-modified", "review-note", "inbox-preview", "daily-focus", "countdown"]);
 
 export function sectionKey(source: string, section: string): string {
   return `section:${encodeURIComponent(source)}:${encodeURIComponent(section)}`;
@@ -192,6 +253,24 @@ function normalizeModules(value: unknown): Record<string, ModuleOptions> {
     if (!id || id === "bookmarks" || id === "__proto__" || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
     const candidate = raw as Partial<ModuleOptions>;
     result[id] = {
+      ...(typeof candidate.folder === "string" ? { folder: candidate.folder.trim().replace(/\/$/, "") } : {}),
+      ...(typeof candidate.path === "string" ? { path: candidate.path.trim() } : {}),
+      ...(typeof candidate.query === "string" ? { query: candidate.query.slice(0, 500) } : {}),
+      ...(Array.isArray(candidate.customSites) ? { customSites: candidate.customSites.flatMap(site => {
+        try { return site && typeof site.name === "string" && typeof site.url === "string" ? parseSearchTemplates(`${site.name} | ${site.url}`) : []; } catch { return []; }
+      }).slice(0, 8) } : {}),
+      ...(Array.isArray(candidate.paths) ? { paths: [...new Set(strings(candidate.paths))].slice(0, 20) } : {}),
+      ...(Array.isArray(candidate.sites) ? { sites: strings(candidate.sites) } : {}),
+      ...(typeof candidate.format === "string" && candidate.format.trim() ? { format: candidate.format.trim().slice(0, 100) } : {}),
+      ...(typeof candidate.url === "string" && calendarUrl(candidate.url) ? { url: calendarUrl(candidate.url)! } : {}),
+      ...(Array.isArray(candidate.zones) ? { zones: candidate.zones.filter((zone): zone is ZoneEntry => Boolean(zone) && typeof zone.label === "string" && typeof zone.zone === "string" && validZone(zone.zone))
+        .map(zone => ({ label: zone.label.slice(0, 40), zone: zone.zone })).slice(0, 8) } : {}),
+      ...(clockMinutes(candidate.start) !== null ? { start: candidate.start } : {}),
+      ...(clockMinutes(candidate.end) !== null ? { end: candidate.end } : {}),
+      ...(candidate.location && typeof candidate.location.name === "string" && Math.abs(Number(candidate.location.latitude)) <= 90 && Math.abs(Number(candidate.location.longitude)) <= 180
+        && Number.isFinite(candidate.location.latitude) && Number.isFinite(candidate.location.longitude)
+        ? { location: { name: candidate.location.name.slice(0, 80), latitude: candidate.location.latitude, longitude: candidate.location.longitude } } : {}),
+      ...(candidate.unit === "c" || candidate.unit === "f" ? { unit: candidate.unit } : {}),
       visible: typeof candidate.visible === "boolean" ? candidate.visible : true,
       limit: typeof candidate.limit === "number" && Number.isFinite(candidate.limit)
         ? Math.min(6, Math.max(1, Math.floor(candidate.limit))) : 3,
@@ -204,6 +283,9 @@ function normalizeModules(value: unknown): Record<string, ModuleOptions> {
 export function normalizeSettings(saved: unknown): HomeSettings {
   const raw = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
   const wall = (raw.wallpaper && typeof raw.wallpaper === "object" ? raw.wallpaper : {}) as Record<string, unknown>;
+  const focus = (raw.dailyFocus && typeof raw.dailyFocus === "object" ? raw.dailyFocus : {}) as Record<string, unknown>;
+  const ambient = (raw.ambient && typeof raw.ambient === "object" ? raw.ambient : {}) as Record<string, unknown>;
+  const deadline = (raw.countdown && typeof raw.countdown === "object" ? raw.countdown : {}) as Record<string, unknown>;
   const defaults = DEFAULT_SETTINGS;
   const dim = typeof wall.dim === "number" && Number.isFinite(wall.dim) ? Math.min(0.8, Math.max(0, wall.dim)) : defaults.wallpaper.dim;
   const actions = Array.isArray(raw.actions) ? strings(raw.actions) : [...defaults.actions];
@@ -263,8 +345,21 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
     todoPath: text(raw.todoPath, defaults.todoPath),
+    githubSecret: text(raw.githubSecret).slice(0, 200),
+    createFolder: text(raw.createFolder).trim().replace(/^\/+|\/+$/g, "").slice(0, 300),
     todoDaily: raw.todoDaily !== false,
     todoAutoCarry: raw.todoAutoCarry === true,
+    reviewFolder: text(raw.reviewFolder).trim().replace(/\/$/, ""),
+    focusSession: normalizeFocus(raw.focusSession),
+    focusLog: raw.focusLog === true,
+    focusStats: (() => { const stats = (raw.focusStats && typeof raw.focusStats === "object" ? raw.focusStats : {}) as Record<string, unknown>;
+      const count = typeof stats.count === "number" && Number.isFinite(stats.count) ? Math.max(0, Math.floor(stats.count)) : 0;
+      const minutes = typeof stats.minutes === "number" && Number.isFinite(stats.minutes) ? Math.max(0, Math.floor(stats.minutes)) : 0;
+      return { day: /^\d{4}-\d{2}-\d{2}$/.test(text(stats.day)) ? text(stats.day) : "", count, minutes }; })(),
+    dailyFocus: { day: /^\d{4}-\d{2}-\d{2}$/.test(text(focus.day)) ? text(focus.day) : "", text: text(focus.text).slice(0, 240), done: focus.done === true },
+    ambient: { kind: pick(ambient.kind, ["white", "pink", "brown"], defaults.ambient.kind),
+      volume: typeof ambient.volume === "number" && Number.isFinite(ambient.volume) ? Math.min(1, Math.max(0, ambient.volume)) : defaults.ambient.volume },
+    countdown: { label: text(deadline.label).slice(0, 80), date: /^\d{4}-\d{2}-\d{2}$/.test(text(deadline.date)) ? text(deadline.date) : "" },
     hiddenRecommendations: strings(raw.hiddenRecommendations),
   };
 }

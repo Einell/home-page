@@ -1,4 +1,18 @@
+import { BookmarkImportModal } from "./bookmark-import";
+import { PRODUCTIVITY_MODULES, type ProductivityId } from "./productivity-catalog";
+import { DISCOVERY_MODULES, defaultSites, parseSearchTemplates, type DiscoveryModuleId } from "./discovery";
+import { isExtra } from "./extra-catalog";
+import { INTEGRATIONS, isIntegration } from "./integrations";
+import { FilePicker, defaultFolderLabel, folderDropdown, renderExtraOptions } from "./extra-ui";
+import { renderTodoPreferences } from "./todo-ui";
+import { GithubConnectModal, githubConnected } from "./github";
+import { EXTENSION_PROMPT_EN, EXTENSION_PROMPT_ZH } from "./extension-prompt";
+import { loadRegistry, SUBMIT_URL } from "./registry";
+import { dailyOptions } from "./today";
+import { MODULE_CATEGORIES, moduleCategory, type ModuleCategory } from "./module-categories";
+import { validDay } from "./productivity-data";
 import { ShortcutEditorModal } from "./shortcut-ui";
+import { recentlyModified, reviewCandidates } from "./home-native-modules";
 import { shortcutModuleId } from "./shortcuts";
 import { Modal, Notice, Setting, setIcon } from "obsidian";
 import type QiaomuHomePlugin from "./main";
@@ -7,12 +21,18 @@ import { builtinModules, pluginModules, type HomeModule } from "./module-catalog
 import { connectionSnapshot, connectionsChanged } from "./connections";
 import { moduleOptions, moduleSource } from "./settings";
 import { moveModule, setModule } from "./layout";
-import { openCommunityPluginSettings, openPluginPage } from "./ecosystem";
+import { installState, openCommunityPluginSettings, openPluginPage } from "./ecosystem";
 
 export class ModuleLibrary extends Modal {
   private list!: HTMLElement;
+  private filters!: HTMLElement;
   private modules: HomeModule[] = [];
   private query = "";
+  /** Remembered across openings in this session. */
+  private static category: ModuleCategory | "all" = "all";
+  private static onlyNew = false;
+  private community: HomeModule[] = [];
+  private communityState: "idle" | "loading" | "ready" | "error" = "idle";
   private generation = 0;
   private timer: number | null = null;
   private snapshot: unknown[] = [];
@@ -29,7 +49,10 @@ export class ModuleLibrary extends Modal {
     this.contentEl.createDiv({ cls: "qh-library-context", text: t("library.target", { name: page?.name || t("pages.default") }) });
     new Setting(this.contentEl).setName(t("library.search"))
       .addSearch((input) => input.setPlaceholder(t("library.searchHint")).onChange((query) => { this.query = query; this.renderList(); }));
-    this.list = this.contentEl.createDiv({ cls: "qh-library-grid" });
+    this.filters = this.contentEl.createDiv({ cls: "qh-library-filters" });
+    this.filters.setAttr("role", "toolbar");
+    this.filters.setAttr("aria-label", isChinese() ? "按分类筛选" : "Filter by category");
+    this.list = this.contentEl.createDiv({ cls: "qh-library-list" });
     void this.load();
     this.snapshot = connectionSnapshot(this.app);
     this.timer = window.setInterval(() => {
@@ -40,7 +63,8 @@ export class ModuleLibrary extends Modal {
 
   private baseModules(): HomeModule[] {
     const page = this.plugin.settings.pages.find((item) => item.id === this.pageId);
-    return [...builtinModules(), { id: "new-shortcuts", title: isChinese() ? "快捷方式" : "Shortcuts", source: "Home", icon: "link", description: isChinese() ? "自定义笔记、文件夹和网址入口。" : "Your notes, folders and websites.", status: "ready" },
+    return [...builtinModules(), { id: "build-extension", title: isChinese() ? "用 AI 开发一个组件" : "Build a card with AI", source: isChinese() ? "乔木 Home 社区" : "Qiaomu Home community", icon: "wand-sparkles", status: "ready",
+      description: isChinese() ? "复制开发提示词发给你的 Agent，做好后提交到社区，所有人都能用。" : "Copy a prompt for your coding agent, then submit the result so everyone can use it." }, ...this.community, { id: "import-bookmarks", title: isChinese() ? "导入浏览器书签" : "Import browser bookmarks", source: "Home", icon: "file-input", description: isChinese() ? "预览浏览器导出的 HTML，将网址加入快捷方式。" : "Preview exported HTML bookmarks and import shortcuts.", status: "ready" }, { id: "new-shortcuts", title: isChinese() ? "快捷方式" : "Shortcuts", source: "Home", icon: "link", description: isChinese() ? "自定义笔记、文件夹和网址入口。" : "Your notes, folders and websites.", status: "ready" },
       ...(page?.shortcutGroups ?? []).map((group): HomeModule => ({ id: shortcutModuleId(group.id), title: group.name, source: "Home", icon: "link", description: isChinese() ? "已添加的快捷方式" : "Saved shortcuts", status: "ready", preview: group.items.map((item) => item.name || item.target) }))];
   }
 
@@ -54,71 +78,208 @@ export class ModuleLibrary extends Modal {
     this.renderList();
   }
 
+  private loadCommunity(retry = false): void {
+    // Load once per opening; after a failure only an explicit retry fetches again.
+    if (this.communityState !== "idle" && !(retry && this.communityState === "error")) return;
+    this.communityState = "loading";
+    void loadRegistry().then(entries => {
+      this.community = entries.map((entry): HomeModule => {
+        const state = installState(this.app, entry.id);
+        return { id: `community:${entry.id}`, title: isChinese() ? entry.name.zh : entry.name.en, source: entry.author || entry.id, icon: entry.icon,
+          description: isChinese() ? entry.description.zh : entry.description.en, status: state === "enabled" ? "ready" : state, community: entry };
+      });
+      this.communityState = "ready";
+    }).catch(() => { this.communityState = "error"; }).finally(() => { if (this.list?.isConnected) { this.modules = [...this.baseModules(), ...this.modules.filter(item => item.sourceId)]; this.renderList(); } });
+  }
+
+  private isAdded(item: HomeModule): boolean {
+    if (item.community || item.id === "build-extension") return false;
+    return !["new-shortcuts", "import-bookmarks"].includes(item.id) && moduleOptions(this.plugin.settings, item.id, this.pageId).visible;
+  }
+
+  private renderFilters(modules: HomeModule[]): void {
+    const focused = this.filters.contains(this.filters.ownerDocument.activeElement) ? (this.filters.ownerDocument.activeElement as HTMLElement).dataset.category : null;
+    this.filters.empty();
+    const chip = (id: string, label: string, count: number, icon?: string) => {
+      const button = this.filters.createEl("button", { cls: "qh-library-chip" });
+      if (icon) setIcon(button.createSpan({ cls: "qh-library-chip-icon" }), icon);
+      button.createSpan({ text: label });
+      button.createSpan({ cls: "qh-library-count", text: String(count) });
+      button.dataset.category = id;
+      button.setAttr("aria-pressed", String(id === ModuleLibrary.category));
+      button.addEventListener("click", () => { ModuleLibrary.category = id as ModuleCategory | "all"; this.renderList(); });
+      button.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+        const chips = Array.from(this.filters.querySelectorAll<HTMLElement>(".qh-library-chip"));
+        chips[(chips.indexOf(button) + (event.key === "ArrowRight" ? 1 : -1) + chips.length) % chips.length]?.focus();
+        event.preventDefault();
+      });
+      if (focused === id) window.setTimeout(() => button.focus());
+    };
+    chip("all", isChinese() ? "全部" : "All", modules.length);
+    for (const category of MODULE_CATEGORIES) {
+      const count = modules.filter((item) => moduleCategory(item.id, item.sourceId) === category.id).length;
+      if (count || ModuleLibrary.category === category.id || category.id === "community") chip(category.id, isChinese() ? category.zh : category.en, count, category.icon);
+    }
+    const toggle = this.filters.createEl("label", { cls: "qh-library-only-new" });
+    const box = toggle.createEl("input", { type: "checkbox" });
+    box.checked = ModuleLibrary.onlyNew;
+    toggle.createSpan({ text: isChinese() ? "只看未添加" : "Not added only" });
+    box.addEventListener("change", () => { ModuleLibrary.onlyNew = box.checked; this.renderList(); });
+  }
+
   private renderList(): void {
     if (!this.list) return;
     this.list.empty();
     const page = this.plugin.settings.pages.find((item) => item.id === this.pageId);
     if (!page) { this.close(); return; }
     const query = this.query.trim().toLocaleLowerCase();
-    const modules = this.modules.filter((item) => `${item.title} ${item.source} ${item.description}`.toLocaleLowerCase().includes(query));
-    if (!modules.length) this.list.createDiv({ cls: "qh-library-empty", text: t("library.noResults") });
-    for (const item of modules) {
-      const card = this.list.createDiv({ cls: "qh-library-module" });
-      card.dataset.module = item.id;
-      const head = card.createDiv({ cls: "qh-library-heading" });
-      setIcon(head.createSpan(), item.icon);
-      head.createSpan({ text: item.title });
-      card.createDiv({ cls: "qh-library-source", text: item.source });
-      const preview = card.createDiv({ cls: "qh-library-preview" });
-      const names = item.section?.items.slice(0, 3).map((entry) => entry.title) ?? [...(item.preview ?? [])];
-      if (item.id === "recent") names.push(...this.app.workspace.getLastOpenFiles().slice(0, 3).map((path) => path.split("/").pop() ?? path));
-      if (names.length) for (const name of names) preview.createDiv({ cls: "qh-library-preview-line", text: name });
-      else {
-        for (let i = 0; i < 3; i++) {
-          const line = preview.createDiv({ cls: "qh-library-skeleton", attr: { "aria-hidden": "true" } });
-          setIcon(line.createSpan(), item.icon);
-          line.createSpan({ cls: "qh-library-skeleton-text" });
-        }
+    const categoryName = (item: HomeModule) => {
+      const category = MODULE_CATEGORIES.find((entry) => entry.id === moduleCategory(item.id, item.sourceId))!;
+      return `${category.zh} ${category.en}`;
+    };
+    const searched = this.modules.filter((item) => !ModuleLibrary.onlyNew || !this.isAdded(item))
+      .filter((item) => `${item.title} ${item.source} ${item.description} ${(item.preview ?? []).join(" ")} ${categoryName(item)}`.toLocaleLowerCase().includes(query));
+    this.renderFilters(searched);
+    const modules = searched.filter((item) => ModuleLibrary.category === "all" || moduleCategory(item.id, item.sourceId) === ModuleLibrary.category);
+    if (ModuleLibrary.category === "community") {
+      this.loadCommunity();
+      const note = this.list.createDiv({ cls: "qh-library-note" });
+      setIcon(note.createSpan(), this.communityState === "error" ? "wifi-off" : "globe");
+      note.createSpan({ text: this.communityState === "loading" ? (isChinese() ? "正在从 GitHub 读取社区组件…" : "Loading community extensions from GitHub…")
+        : this.communityState === "error" ? (isChinese() ? "社区列表暂时读取失败，请检查网络" : "Could not load the community list; check your connection")
+        : (isChinese() ? "社区组件由作者维护，安装前可查看源码仓库。列表只在打开此分类时从 GitHub 读取。" : "Community extensions are maintained by their authors; review the repository before installing. The list is fetched from GitHub only when you open this category.") });
+      if (this.communityState === "error") {
+        const retry = note.createEl("button", { cls: "qh-library-retry", text: isChinese() ? "重试" : "Retry" });
+        retry.addEventListener("click", () => { this.loadCommunity(true); this.renderList(); });
       }
-      card.createDiv({ cls: "qh-library-description", text: item.description });
-      const added = item.id !== "new-shortcuts" && moduleOptions(this.plugin.settings, item.id, this.pageId).visible;
-      const ready = item.status === "ready";
-      const label = ready ? (added ? t("library.added") : t("library.add"))
-        : item.status === "absent" ? t("library.install") : item.status === "disabled" ? t("library.enable") : t("legacy.retry");
-      if (!ready) card.createDiv({ cls: "qh-library-status", text: t(item.status === "absent" ? "library.needsPlugin" : item.status === "disabled" ? "library.disabled" : "legacy.unavailable") });
-      const button = card.createEl("button", { text: label });
-      button.disabled = ready && added;
-      button.addEventListener("click", () => {
-        if (item.id === "new-shortcuts") { this.close(); new ShortcutEditorModal(this.plugin, this.pageId).open(); return; }
-        if (!ready) {
-          if (item.status === "absent" && item.sourceId) openPluginPage(item.sourceId);
-          else if (item.status === "disabled") {
-            openCommunityPluginSettings(this.app);
-          } else void this.load();
-          return;
-        }
-        const target = this.plugin.settings.pages.find((entry) => entry.id === this.pageId);
-        if (!target) { this.close(); return; }
-        button.disabled = true;
-        const previous = target.moduleOptions[item.id];
-        const hadOrderEntry = target.moduleOrder.includes(item.id);
-        // Materialize current order before appending, so adding does not move existing cards.
-        if (!target.moduleOrder.length) target.moduleOrder = this.modules.filter((entry) => moduleOptions(this.plugin.settings, entry.id, target.id).visible).map((entry) => entry.id);
-        if (!target.moduleOrder.includes(item.id)) target.moduleOrder.push(item.id);
-        setModule(this.plugin.settings, target.id, item.id, { visible: true });
-        const addedOption = target.moduleOptions[item.id];
-        void this.plugin.saveSettings().then(() => { if (this.list.isConnected) this.renderList(); })
-          .catch(() => {
-            if (target.moduleOptions[item.id] === addedOption) {
-              if (previous) target.moduleOptions[item.id] = previous;
-              else delete target.moduleOptions[item.id];
-              if (!hadOrderEntry) target.moduleOrder = target.moduleOrder.filter((id) => id !== item.id);
-            }
-            new Notice(t("layout.saveFailed"));
-            if (this.list.isConnected) this.renderList();
-          });
-      });
     }
+    if (!modules.length) { this.list.createDiv({ cls: "qh-library-empty", text: t("library.noResults") }); return; }
+    const groups = ModuleLibrary.category === "all" && !query
+      ? MODULE_CATEGORIES.map((category) => ({ category, items: modules.filter((item) => moduleCategory(item.id, item.sourceId) === category.id) })).filter((group) => group.items.length)
+      : [{ category: null, items: modules }];
+    for (const group of groups) {
+      if (group.category) {
+        const heading = this.list.createEl("h3", { cls: "qh-library-group" });
+        setIcon(heading.createSpan(), group.category.icon);
+        heading.createSpan({ text: isChinese() ? group.category.zh : group.category.en });
+        heading.createSpan({ cls: "qh-library-count", text: String(group.items.length) });
+      }
+      const grid = this.list.createDiv({ cls: "qh-library-grid" });
+      for (const item of group.items) this.renderModule(grid, item);
+    }
+  }
+
+  private renderModule(grid: HTMLElement, item: HomeModule): void {
+    if (item.id === "build-extension") { this.renderBuildCard(grid, item); return; }
+    const added = this.isAdded(item);
+    const card = grid.createDiv({ cls: "qh-library-module" });
+    card.dataset.module = item.id;
+    card.toggleClass("is-added", added);
+    const head = card.createDiv({ cls: "qh-library-heading" });
+    setIcon(head.createSpan(), item.icon);
+    head.createSpan({ text: item.title });
+    if (added) head.createSpan({ cls: "qh-library-badge", text: t("library.added") });
+    card.createDiv({ cls: "qh-library-source", text: item.source });
+    const names = item.section?.items.slice(0, 3).map((entry) => entry.title) ?? [...(item.preview ?? [])];
+    if (item.id === "recent") names.push(...this.app.workspace.getLastOpenFiles().slice(0, 3).map((path) => path.split("/").pop() ?? path));
+    if (item.id === "recently-modified") names.push(...recentlyModified(this.app, 3).map((file) => file.basename));
+    if (item.id === "review-note") names.push(...reviewCandidates(this.app, this.plugin.settings.reviewFolder).slice(0, 3).map((file) => file.basename));
+    // Only real content earns a preview box; placeholders made 50+ cards hard to scan.
+    if (names.length) {
+      const preview = card.createDiv({ cls: "qh-library-preview" });
+      for (const name of names.slice(0, 3)) preview.createDiv({ cls: "qh-library-preview-line", text: name });
+    }
+    card.createDiv({ cls: "qh-library-description", text: item.description });
+    if (item.requires && installState(this.app, item.requires) !== "enabled") {
+      const need = card.createDiv({ cls: "qh-library-requires" });
+      setIcon(need.createSpan(), "package");
+      need.createSpan({ text: isChinese() ? `需要 ${item.source} 插件，添加后卡片会引导安装` : `Uses ${item.source}; the card guides installation` });
+    }
+    const ready = item.status === "ready";
+    if (!ready) card.createDiv({ cls: "qh-library-status", text: t(item.status === "absent" ? "library.needsPlugin" : item.status === "disabled" ? "library.disabled" : "legacy.unavailable") });
+    const actions = card.createDiv({ cls: "qh-library-actions" });
+    if (ready && added) {
+      const remove = actions.createEl("button", { text: isChinese() ? "从此页移除" : "Remove" });
+      remove.setAttr("aria-label", isChinese() ? `从此页移除${item.title}` : `Remove ${item.title} from this page`);
+      remove.addEventListener("click", () => this.setVisible(item, false, remove));
+      return;
+    }
+    const label = item.community ? (ready ? (isChinese() ? "去插件联动添加卡片" : "Add its cards") : item.status === "disabled" ? t("library.enable") : item.community.store ? t("library.install") : (isChinese() ? "查看仓库" : "View repository"))
+      : ready ? t("library.add")
+      : item.status === "absent" ? t("library.install") : item.status === "disabled" ? t("library.enable") : t("legacy.retry");
+    const button = actions.createEl("button", { cls: ready || item.community ? "mod-cta" : "", text: label });
+    if (item.community) {
+      const repo = actions.createEl("button", { text: isChinese() ? "源码" : "Source" });
+      repo.addEventListener("click", () => window.open(item.community!.repo, "_blank", "noopener,noreferrer"));
+    }
+    button.setAttr("aria-label", `${label} ${item.title}`);
+    button.addEventListener("click", () => {
+      if (item.id === "import-bookmarks") { this.close(); new BookmarkImportModal(this.plugin, this.pageId).open(); return; }
+      if (item.id === "new-shortcuts") { this.close(); new ShortcutEditorModal(this.plugin, this.pageId).open(); return; }
+      if (item.community) {
+        // Installed community plugins provide their cards under Integrations; send the user there.
+        if (ready) { ModuleLibrary.category = "plugins"; this.query = ""; void this.load(); return; }
+        if (item.status === "disabled") openCommunityPluginSettings(this.app);
+        else if (item.community.store) openPluginPage(item.community.id);
+        else window.open(item.community.repo, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (!ready) {
+        if (item.status === "absent" && item.sourceId) openPluginPage(item.sourceId);
+        else if (item.status === "disabled") openCommunityPluginSettings(this.app);
+        else void this.load();
+        return;
+      }
+      this.setVisible(item, true, button);
+    });
+  }
+
+  private renderBuildCard(grid: HTMLElement, item: HomeModule): void {
+    const card = grid.createDiv({ cls: "qh-library-module qh-library-build" });
+    card.dataset.module = item.id;
+    const head = card.createDiv({ cls: "qh-library-heading" });
+    setIcon(head.createSpan(), item.icon);
+    head.createSpan({ text: item.title });
+    card.createDiv({ cls: "qh-library-description", text: item.description });
+    const steps = card.createEl("ol", { cls: "qh-library-steps" });
+    for (const step of isChinese() ? ["复制提示词，填上你的想法", "发给 Claude Code、Codex 等 Agent", "装进测试库，在「插件联动」添加", "提交到社区，审核后所有人可用"]
+      : ["Copy the prompt and add your idea", "Give it to Claude Code, Codex or another agent", "Install it in a test vault and add it under Integrations", "Submit it; once accepted everyone can use it"]) steps.createEl("li", { text: step });
+    const actions = card.createDiv({ cls: "qh-library-actions" });
+    const copy = actions.createEl("button", { cls: "mod-cta", text: isChinese() ? "复制开发提示词" : "Copy prompt" });
+    copy.addEventListener("click", () => void navigator.clipboard.writeText(isChinese() ? EXTENSION_PROMPT_ZH : EXTENSION_PROMPT_EN)
+      .then(() => { copy.setText(isChinese() ? "已复制 ✓" : "Copied ✓"); window.setTimeout(() => copy.setText(isChinese() ? "复制开发提示词" : "Copy prompt"), 2000); })
+      .catch(() => new Notice(isChinese() ? "复制失败" : "Copy failed")));
+    const submit = actions.createEl("button", { text: isChinese() ? "提交组件" : "Submit" });
+    submit.addEventListener("click", () => window.open(SUBMIT_URL, "_blank", "noopener,noreferrer"));
+  }
+
+  /** Adds or removes a card on the target page and rolls back if saving fails. */
+  private setVisible(item: HomeModule, visible: boolean, button: HTMLButtonElement): void {
+    const target = this.plugin.settings.pages.find((entry) => entry.id === this.pageId);
+    if (!target) { this.close(); return; }
+    button.disabled = true;
+    const previous = target.moduleOptions[item.id];
+    const previousOrder = [...target.moduleOrder];
+    if (visible) {
+      // Materialize current order before appending, so adding does not move existing cards.
+      if (!target.moduleOrder.length) target.moduleOrder = this.modules.filter((entry) => moduleOptions(this.plugin.settings, entry.id, target.id).visible).map((entry) => entry.id);
+      if (!target.moduleOrder.includes(item.id)) target.moduleOrder.push(item.id);
+    }
+    setModule(this.plugin.settings, target.id, item.id, { visible });
+    const changed = target.moduleOptions[item.id];
+    void this.plugin.saveSettings().then(() => {
+      if (visible) new Notice(isChinese() ? `已添加「${item.title}」` : `Added “${item.title}”`);
+      if (this.list.isConnected) this.renderList();
+    }).catch(() => {
+      if (target.moduleOptions[item.id] === changed) {
+        if (previous) target.moduleOptions[item.id] = previous;
+        else delete target.moduleOptions[item.id];
+        target.moduleOrder = previousOrder;
+      }
+      new Notice(t("layout.saveFailed"));
+      if (this.list.isConnected) this.renderList();
+    });
   }
 
   onClose(): void {
@@ -132,6 +293,146 @@ export class ModuleOptionsModal extends Modal {
   constructor(private plugin: QiaomuHomePlugin, private pageId: string, private moduleId: string, private name: string) { super(plugin.app); this.modalEl.addClass("qh-ui"); }
   onOpen(): void {
     this.setTitle(this.name);
+    const L = (zh: string, en: string) => isChinese() ? zh : en;
+    const options = moduleOptions(this.plugin.settings, this.moduleId, this.pageId);
+    const persist = async (change: Partial<typeof options>) => {
+      const page = this.plugin.settings.pages.find(page => page.id === this.pageId);
+      if (!page) { this.close(); return; }
+      const previous = page.moduleOptions[this.moduleId];
+      const next = { ...moduleOptions(this.plugin.settings, this.moduleId, this.pageId), ...change };
+      page.moduleOptions[this.moduleId] = next;
+      try { await this.plugin.saveSettings(); return true; }
+      catch { if (page.moduleOptions[this.moduleId] === next) { if (previous) page.moduleOptions[this.moduleId] = previous; else delete page.moduleOptions[this.moduleId]; } new Notice(t("layout.saveFailed")); return false; }
+    };
+    const about = builtinModules().find(item => item.id === this.moduleId);
+    if (about) this.contentEl.createEl("p", { cls: "qh-options-about", text: about.description });
+    if (isExtra(this.moduleId)) { renderExtraOptions(this.contentEl, this.plugin, this.pageId, this.moduleId, persist); return; }
+    if (isIntegration(this.moduleId)) {
+      const integration = INTEGRATIONS[this.moduleId];
+      const state = installState(this.app, integration.plugin);
+      if (state !== "enabled") new Setting(this.contentEl).setName(L(`需要 ${integration.pluginName}`, `Requires ${integration.pluginName}`))
+        .setDesc(state === "disabled" ? L("已安装但未启用", "Installed but off") : L("尚未安装", "Not installed"))
+        .addButton(button => button.setButtonText(state === "disabled" ? L("去启用", "Turn on") : L("安装", "Install")).setCta()
+          .onClick(() => state === "disabled" ? openCommunityPluginSettings(this.app) : openPluginPage(integration.plugin)));
+      if (this.moduleId === "dataview-query") {
+        let query = options.query ?? "";
+        new Setting(this.contentEl).setName(L("Dataview 查询", "Dataview query")).setDesc(L("支持 LIST 和 TABLE，例如：LIST FROM #项目 SORT file.mtime DESC", "LIST and TABLE, e.g. LIST FROM #project SORT file.mtime DESC"))
+          .addTextArea(input => { input.inputEl.rows = 4; input.setValue(query).onChange(value => { query = value; }); });
+        new Setting(this.contentEl).addButton(button => button.setButtonText(L("保存查询", "Save query")).setCta().onClick(async () => { if (await persist({ query: query.trim().slice(0, 500) })) new Notice(L("已保存查询", "Query saved")); }));
+      }
+      if (["dataview-query", "kanban-boards", "excalidraw-drawings", "omnisearch", "quickadd-actions"].includes(this.moduleId)) new Setting(this.contentEl).setName(t("layout.count"))
+        .addDropdown(dropdown => dropdown.addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, i) => [String(i + 1), String(i + 1)])))
+          .setValue(String(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).limit)).onChange(value => { void persist({ limit: Number(value) }); }));
+      return;
+    }
+    if (this.moduleId === "countdown") {
+      let label = this.plugin.settings.countdown.label, date = this.plugin.settings.countdown.date;
+      new Setting(this.contentEl).setName(L("日期名称", "Event name")).addText(input => input.setValue(label).onChange(value => { label = value; }));
+      new Setting(this.contentEl).setName(L("日期", "Date")).addText(input => { input.inputEl.type = "date"; input.setValue(date).onChange(value => { date = value; }); });
+      new Setting(this.contentEl).addButton(button => button.setButtonText(L("保存", "Save")).setCta().onClick(async () => {
+        if (!validDay(date)) { new Notice(L("请选择有效日期", "Choose a valid date")); return; }
+        const previous = this.plugin.settings.countdown;
+        this.plugin.settings.countdown = { label: label.trim().slice(0, 80), date };
+        button.setDisabled(true);
+        try { await this.plugin.saveSettings(); this.close(); }
+        catch { this.plugin.settings.countdown = previous; button.setDisabled(false); new Notice(t("layout.saveFailed")); }
+      })); return;
+    }
+    if (Object.hasOwn(DISCOVERY_MODULES, this.moduleId)) {
+      const config = DISCOVERY_MODULES[this.moduleId as DiscoveryModuleId];
+      if (this.moduleId === "dev-inbox") {
+        new Setting(this.contentEl).setName(L("GitHub 账号", "GitHub account")).setDesc(githubConnected(this.plugin) ? L("已连接，卡片会列出你的 PR 和 Issue", "Connected; the card lists your pull requests and issues") : L("未连接，卡片只显示网页入口", "Not connected; the card shows links only"))
+          .addButton(button => button.setButtonText(githubConnected(this.plugin) ? L("管理连接", "Manage") : L("连接 GitHub", "Connect GitHub")).setCta().onClick(() => { this.close(); new GithubConnectModal(this.plugin).open(); }));
+        new Setting(this.contentEl).setName(t("layout.count")).addDropdown(dropdown => dropdown.addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, i) => [String(i + 1), String(i + 1)])))
+          .setValue(String(options.limit)).onChange(value => { void persist({ limit: Number(value) }); }));
+      }
+      const multi = this.moduleId === "multi-search";
+      new Setting(this.contentEl).setHeading().setName(multi ? L("默认一起搜索的网站", "Sites searched together") : L("卡片上显示的来源", "Sources shown on the card"));
+      for (const site of config.sites) new Setting(this.contentEl).setName(L(site.zh, site.en)).setDesc(new URL(site.home).hostname).addToggle(toggle => toggle.setValue((options.sites ?? defaultSites(config.sites)).includes(site.id)).onChange(async enabled => {
+        const current = moduleOptions(this.plugin.settings, this.moduleId, this.pageId).sites ?? defaultSites(config.sites);
+        const next = enabled ? [...new Set([...current, site.id])] : current.filter(id => id !== site.id);
+        if (!multi && !next.some(id => config.sites.some(entry => entry.id === id))) { new Notice(L("至少保留一个来源", "Keep at least one source")); toggle.setValue(true); return; }
+        await persist({ sites: next });
+      }));
+      if (multi) {
+        let templates = (options.customSites ?? []).map(site => `${site.name} | ${site.url}`).join("\n");
+        new Setting(this.contentEl).setName(L("自定义搜索网站", "Custom search sites")).setDesc(L("每行一个，最多八个：名称 | https://example.com/?q={query}", "One per line, up to eight: Name | https://example.com/?q={query}")).addTextArea(input => input.setValue(templates).onChange(value => { templates = value; }));
+        new Setting(this.contentEl).addButton(button => button.setButtonText(L("保存网站", "Save sites")).onClick(async () => {
+          try {
+            const customSites = parseSearchTemplates(templates);
+            const previous = moduleOptions(this.plugin.settings, this.moduleId, this.pageId);
+            const sites = [...(previous.sites ?? defaultSites(config.sites)).filter(id => !id.startsWith("custom:")), ...customSites.map(site => `custom:${site.url}`)];
+            if (await persist({ customSites, sites })) new Notice(L("已保存搜索网站", "Search sites saved"));
+          } catch (error) { new Notice(error instanceof Error ? error.message : L("网址格式无效", "Invalid search template")); }
+        }));
+      } else if (config.sites.some(site => site.search)) this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("按回车时使用第一个显示的来源；网络请求只在点击后发生。", "Enter uses the first shown source; nothing is requested until you click.") });
+      return;
+    }
+    const config = PRODUCTIVITY_MODULES[this.moduleId as ProductivityId];
+    if (config?.folder) folderDropdown(this.contentEl, this.plugin,
+      this.moduleId === "template-create" ? L("新笔记保存到", "Save new notes to") : this.moduleId === "project-next" ? L("项目文件夹", "Project folder") : L("笔记范围", "Note folder"),
+      this.moduleId === "template-create" ? defaultFolderLabel(this.plugin) : this.moduleId === "project-next" ? L("尚未选择", "Not chosen") : L("整个知识库", "Whole vault"),
+      options.folder ?? "", value => { void persist({ folder: value }); });
+    if (["due-today", "overdue", "milestones"].includes(this.moduleId)) this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("识别任务中的 📅 YYYY-MM-DD 或 [due:: YYYY-MM-DD]。", "Recognizes 📅 YYYY-MM-DD or [due:: YYYY-MM-DD] in tasks.") });
+    if (config?.path) {
+      const setting = new Setting(this.contentEl).setName(this.moduleId === "template-create" ? L("模板笔记", "Template note") : L("来源笔记", "Source note")).setDesc(options.path || L("尚未选择", "Not selected"));
+      setting.addButton(button => button.setButtonText(L("选择笔记", "Choose note")).onClick(() => new FilePicker(this.plugin, ["md"], file => { void persist({ path: file.path }).then(() => setting.setDesc(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).path ?? "")); }).open()));
+    }
+    if (this.moduleId === "habit-checkin") {
+      let names = options.query ?? "";
+      new Setting(this.contentEl).setName(L("习惯属性", "Habit properties")).setDesc(L("用逗号分隔，最多六项。例如：运动, 阅读。打卡只修改今日日记中这些属性的 true / false 值。", "Comma-separated, up to six. Check-ins update only these boolean properties in today's note.")).addText(input => input.setValue(names).onChange(value => { names = value; }));
+      new Setting(this.contentEl).addButton(button => button.setButtonText(L("保存", "Save")).onClick(async () => { if (await persist({ query: names.trim().slice(0, 500) })) new Notice(L("已保存习惯", "Habits saved")); })); return;
+    }
+    if (this.moduleId === "working-set") { this.contentEl.createEl("p", { text: L("在卡片上保存当前笔记组；恢复时会跳过已打开的笔记。", "Save open notes on the card. Restore skips notes already open.") }); return; }
+    if (this.moduleId === "saved-search") {
+      let query = options.query ?? "";
+      new Setting(this.contentEl).setName(L("搜索条件", "Search query")).setDesc(L('例如：tag:#工作 path:"Projects"', 'For example: tag:#work path:"Projects"')).addText(input => input.setValue(query).onChange(value => { query = value; }));
+      new Setting(this.contentEl).addButton(button => button.setButtonText(L("保存", "Save")).onClick(async () => { if (await persist({ query: query.trim().slice(0, 500) })) new Notice(L("已保存搜索条件", "Search query saved")); })); return;
+    }
+    if (this.moduleId === "focus-timer") {
+      new Setting(this.contentEl).setName(L("每次专注时长", "Session duration")).setDesc(L("正在运行的计时保持不变；重置或下次开始时采用新时长。", "Running sessions keep their deadline; reset or start again to use the new duration.")).addDropdown(dropdown => dropdown.addOptions(Object.fromEntries([5, 15, 25, 45, 60, 90].map(minutes => [String(minutes), L(`${minutes} 分钟`, `${minutes} minutes`)]))).setValue(String(this.plugin.settings.focusSession.durationMinutes)).onChange(async value => {
+        const previous = this.plugin.settings.focusSession;
+        this.plugin.settings.focusSession = { ...previous, durationMinutes: Number(value), remainingMs: !previous.endAt && previous.remainingMs === previous.durationMinutes * 60000 ? Number(value) * 60000 : previous.remainingMs };
+        try { await this.plugin.saveSettings(); } catch { this.plugin.settings.focusSession = previous; new Notice(t("layout.saveFailed")); }
+      }));
+      new Setting(this.contentEl).setName(L("完成后记入今日日记", "Log to today's daily note")).setDesc(L("写入一行，例如「- 09:00–09:25 专注 25 分钟 · 今日重点」。需要启用日记核心插件。", "Adds a line such as “- 09:00–09:25 Focused 25 min · today's focus”. Requires Daily notes."))
+        .addToggle(toggle => toggle.setValue(this.plugin.settings.focusLog).onChange(async value => {
+          this.plugin.settings.focusLog = value;
+          try { await this.plugin.saveSettings({ rerender: false }); } catch { this.plugin.settings.focusLog = !value; toggle.setValue(!value); new Notice(t("layout.saveFailed")); }
+        }));
+      return;
+    }
+    if (this.moduleId === "template-create") this.contentEl.createEl("p", { text: L("支持 {{title}}、{{date}}、{{time}}，不执行 Templater 脚本。留空文件夹时使用 Obsidian 默认新笔记位置。", "Supports {{title}}, {{date}} and {{time}}; Templater scripts are not executed. An empty folder uses the default new-note location.") });
+    if (config && !config.count) return;
+    if (this.moduleId === "daily-focus") { this.contentEl.createEl("p", { text: L("直接在卡片上编辑今天的重点。", "Edit today's focus directly on the card.") }); return; }
+    if (this.moduleId === "review-note") {
+      folderDropdown(this.contentEl, this.plugin, L("回顾范围", "Review folder"), L("整个知识库（不含模板）", "Whole vault (templates excluded)"), this.plugin.settings.reviewFolder, value => {
+        const previous = this.plugin.settings.reviewFolder;
+        this.plugin.settings.reviewFolder = value;
+        void this.plugin.saveSettings().catch(() => { this.plugin.settings.reviewFolder = previous; new Notice(t("layout.saveFailed")); });
+      });
+      return;
+    }
+    if (this.moduleId === "todo") { renderTodoPreferences(this.contentEl, this.plugin, () => { this.contentEl.empty(); this.onOpen(); }); }
+    if (this.moduleId === "inbox-preview") {
+      const setting = new Setting(this.contentEl).setName(L("收件箱笔记", "Inbox note")).setDesc(this.plugin.settings.captureInboxPath);
+      setting.addButton(button => button.setButtonText(L("选择笔记", "Choose note")).onClick(() => new FilePicker(this.plugin, ["md"], file => {
+        const previous = this.plugin.settings.captureInboxPath;
+        this.plugin.settings.captureInboxPath = file.path; setting.setDesc(file.path);
+        void this.plugin.saveSettings().catch(() => { this.plugin.settings.captureInboxPath = previous; setting.setDesc(previous); new Notice(t("layout.saveFailed")); });
+      }).open()));
+      this.contentEl.createEl("p", { cls: "qh-native-scope", text: L("与快速记录、搜索框 ⇧↵ 记录共用同一篇笔记。", "Shared with Quick capture and Shift+Enter capture in search.") });
+    }
+    if (this.moduleId === "recently-modified") folderDropdown(this.contentEl, this.plugin, L("笔记范围", "Note folder"), L("整个知识库", "Whole vault"), options.folder ?? "", value => { void persist({ folder: value }); });
+    if (["daily-preview", "daily-timeline", "daily-calendar", "habit-checkin"].includes(this.moduleId)) {
+      const info = new Setting(this.contentEl).setName(L("日记位置", "Daily notes")).setDesc(L("读取中…", "Loading…"));
+      void dailyOptions(this.app).then(config => info.setDesc(L(`文件夹：${config.folder || "/"} · 格式：${config.format || "YYYY-MM-DD"}（由日记核心插件设置）`, `Folder: ${config.folder || "/"} · Format: ${config.format || "YYYY-MM-DD"} (Daily notes core plugin)`)))
+        .catch(() => info.setDesc(L("日记核心插件未启用", "Daily notes is not enabled")));
+      info.addButton(button => button.setButtonText(L("日记设置", "Daily notes settings")).onClick(() => {
+        const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
+        setting?.open?.(); setting?.openTabById?.("daily-notes");
+      }));
+    }
     new Setting(this.contentEl).setName(t("layout.count"))
       .addDropdown((dropdown) => dropdown.addOptions(Object.fromEntries(Array.from({ length: 6 }, (_, i) => [String(i + 1), String(i + 1)])))
         .setValue(String(moduleOptions(this.plugin.settings, this.moduleId, this.pageId).limit))

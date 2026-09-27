@@ -58,15 +58,18 @@ describe("Home page layouts", () => {
 
 import { addPresetPage, reorderPage } from '../src/pages';
 describe('starter pages and permanent Home identity',()=>{
-  it('starts with three useful independent presets',()=>{
+  it('starts with six ready-to-use presets',()=>{
     const settings=normalizeSettings(null);
-    expect(settings.pages.map(page=>page.name)).toEqual(['主页','阅读','娱乐']);
+    expect(settings.pages.map(page=>page.name)).toEqual(['主页','专注','知识','阅读','娱乐','探索']);
+    expect(moduleOptions(settings,'focus-timer','focus').visible).toBe(true);
+    expect(moduleOptions(settings,'beginner-plugins','explore').visible).toBe(true);
+    expect(moduleOptions(settings,'beginner-plugins','home').visible).toBe(false);
     expect(settings.tabsEnabled).toBe(true);
     expect(moduleOptions(settings,'todo','home')).toEqual({visible:true,limit:3});
     expect(moduleOptions(settings,'qiaomu-reader','reading').visible).toBe(true);
     expect(moduleOptions(settings,'qiaomu-radio','entertainment').visible).toBe(true);
-    settings.pages[1].moduleOptions['qiaomu-reader'].limit=1;
-    expect(normalizeSettings(null).pages[1].moduleOptions['qiaomu-reader'].limit).toBe(3);
+    settings.pages[3].moduleOptions['qiaomu-reader'].limit=1;
+    expect(normalizeSettings(null).pages[3].moduleOptions['qiaomu-reader'].limit).toBe(3);
   });
   it('protects Home after rename and reorder, and does not revive deleted preset pages',()=>{
     const settings=normalizeSettings(null);

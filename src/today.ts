@@ -70,10 +70,23 @@ export async function captureNote(app: App, settings: HomeSettings, text: string
   if (!note) throw new Error("Empty capture");
   if (settings.captureTarget === "daily" && !commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
   const path = settings.captureTarget === "daily" ? await todayPath(app) : inboxPath(app, settings);
+  await appendLine(app, path, `- ${note}`, settings.captureTarget === "daily");
+  return path;
+}
+
+/** Appends one Markdown line to today's daily note, creating it from the daily template when needed. */
+export async function appendToDaily(app: App, line: string): Promise<string> {
+  if (!commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
+  const path = await todayPath(app);
+  await appendLine(app, path, line, true);
+  return path;
+}
+
+async function appendLine(app: App, path: string, line: string, daily: boolean): Promise<void> {
   await ensureParent(app, path);
   let file = app.vault.getAbstractFileByPath(path);
   if (!file) {
-    const initial = settings.captureTarget === "daily" ? await initialDailyContent(app, path) : "";
+    const initial = daily ? await initialDailyContent(app, path) : "";
     try { file = await app.vault.create(path, initial); }
     catch (error) {
       file = app.vault.getAbstractFileByPath(path);
@@ -81,8 +94,7 @@ export async function captureNote(app: App, settings: HomeSettings, text: string
     }
   }
   if (!(file instanceof TFile)) throw new Error(t("capture.badFile"));
-  await app.vault.process(file, (content) => `${content}${content && !content.endsWith("\n") ? "\n" : ""}- ${note}\n`);
-  return path;
+  await app.vault.process(file, (content) => `${content}${content && !content.endsWith("\n") ? "\n" : ""}${line}\n`);
 }
 
 /** Resolve the date at click time and never overwrite an existing diary. */
