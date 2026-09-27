@@ -1104,7 +1104,6 @@ export class HomeView extends ItemView {
           const raw = rows[entry.line] ?? "";
           const box = line.createEl("input", { type: "checkbox", cls: "qh-line-check" });
           box.checked = entry.task === "done";
-          box.setAttr("aria-label", entry.text);
           box.addEventListener("click", (event) => event.stopPropagation());
           box.addEventListener("change", () => {
             box.disabled = true;
@@ -1119,7 +1118,9 @@ export class HomeView extends ItemView {
           });
           line.toggleClass("is-done", entry.task === "done");
         }
-        line.createSpan({ text: entry.text });
+        const text = line.createSpan({ text: entry.text });
+        text.id = `qh-line-${crypto.randomUUID()}`;
+        line.querySelector<HTMLInputElement>(".qh-line-check")?.setAttr("aria-labelledby", text.id);
         line.tabIndex = 0;
         bindOpen(line, (event) => this.openNote(card, path, event, entry.line));
         line.addEventListener("keydown", (event) => { if (event.key === "Enter") this.openNote(card, path, event, entry.line); });

@@ -235,7 +235,8 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
     }
     // What this session is for: today's focus or an open task. Loaded after render; the choice is kept on the session.
     const target = body.createEl("select", { cls: "dropdown qh-focus-target" }); target.dataset.focusTarget = "true";
-    target.setAttr("aria-label", L("专注于", "Focus on"));
+    const targetName = body.createSpan({ cls: "qh-sr-only", text: L("专注于", "Focus on") });
+    targetName.id = `qh-focus-target-${crypto.randomUUID()}`; target.setAttr("aria-labelledby", targetName.id);
     target.createEl("option", { value: "", text: L("专注于…（可选）", "Focus on… (optional)") });
     void (async () => {
       const labels: string[] = [];

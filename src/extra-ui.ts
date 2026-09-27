@@ -100,7 +100,9 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     status.setAttr("aria-live", "polite");
     // A textarea so pasted or Shift+Enter lines are kept; Enter saves. Extra lines are indented under the first.
     const row = body.createDiv({ cls: "qh-field-row qh-capture-row" });
-    const field = row.createEl("textarea", { cls: "qh-discovery-input qh-capture-input", attr: { rows: "1", placeholder: L("记下一句话…（⇧↵ 换行）", "Write a line… (⇧↵ for a new line)"), "aria-label": L("快速记录", "Quick capture"), maxlength: "2000" } });
+    const field = row.createEl("textarea", { cls: "qh-discovery-input qh-capture-input", attr: { rows: "1", placeholder: L("记下一句话…（⇧↵ 换行）", "Write a line… (⇧↵ for a new line)"), maxlength: "2000" } });
+    const fieldName = row.createSpan({ cls: "qh-sr-only", text: L("快速记录", "Quick capture") });
+    fieldName.id = `qh-capture-${crypto.randomUUID()}`; field.setAttr("aria-labelledby", fieldName.id);
     const submit = row.createEl("button", { cls: "qh-field-submit" });
     setIcon(submit, "corner-down-left"); submit.createSpan({ cls: "qh-sr-only", text: L("记下", "Save") });
     const grow = () => { field.setCssProps({ height: "auto" }); field.setCssProps({ height: `${Math.min(field.scrollHeight, 160)}px` }); };

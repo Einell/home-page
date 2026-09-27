@@ -126,7 +126,6 @@ export function renderHabitCard(body: HTMLElement, card: HTMLElement, plugin: Qi
     const paintWeek = () => {
       week.empty();
       const grid = week.createDiv({ cls: "qh-habit-grid" });
-      grid.setAttr("aria-label", L("最近 7 天", "Last 7 days"));
       for (const spec of specs) {
         const row = grid.createDiv({ cls: "qh-habit-grid-row" });
         row.createSpan({ cls: "qh-habit-grid-name", text: spec.name });
