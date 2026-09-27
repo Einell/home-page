@@ -1,0 +1,50 @@
+name: 提交社区组件 / Submit a community extension
+description: 让你的插件出现在所有乔木 Home 的「社区」分类 / List your plugin in every Qiaomu Home's Community category
+title: "[社区组件] "
+labels: ["extension-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢分享！提交前请确认插件已实现 [乔木 Home 协议](https://github.com/joeseesun/qiaomu-home/blob/main/docs/qiaomu-home-protocol.md)。不会写代码？把[开发提示词](https://github.com/joeseesun/qiaomu-home/blob/main/docs/build-an-extension.md)发给你的 AI Agent。
+        Thanks for sharing! Make sure the plugin implements the Qiaomu Home protocol.
+  - type: input
+    id: plugin-id
+    attributes: { label: 插件 id / Plugin id, description: manifest.json 中的 id, placeholder: my-home-widget }
+    validations: { required: true }
+  - type: input
+    id: repo
+    attributes: { label: GitHub 仓库 / Repository, placeholder: "https://github.com/you/my-home-widget" }
+    validations: { required: true }
+  - type: input
+    id: name
+    attributes: { label: 名称（中文 / English）, placeholder: "我的组件 / My widget" }
+    validations: { required: true }
+  - type: textarea
+    id: description
+    attributes: { label: 一句话介绍（中文 / English）, description: 首页上的卡片显示什么、点一下会做什么 }
+    validations: { required: true }
+  - type: input
+    id: icon
+    attributes: { label: 图标 / Icon, description: "Lucide 图标名，例如 book-open", placeholder: puzzle }
+  - type: dropdown
+    id: store
+    attributes:
+      label: 是否已上架 Obsidian 官方插件市场 / In the official community store?
+      options: ["是 / Yes", "否，只在 GitHub 发布 / No, GitHub releases only"]
+    validations: { required: true }
+  - type: textarea
+    id: screenshot
+    attributes: { label: Home 上的截图 / Screenshot on Home, description: 拖入图片 }
+    validations: { required: true }
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 自查 / Checklist
+      options:
+        - label: sections() 只读本地数据，不联网、不写文件 / sections() reads local data only
+          required: true
+        - label: 在 Obsidian 重载后卡片仍然正常 / Works after reloading Obsidian
+          required: true
+        - label: 不收集用户数据，密钥保存在 Obsidian 密钥库 / No data collection; secrets stay in SecretStorage
+          required: true

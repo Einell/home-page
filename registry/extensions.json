@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "extensions": [
+    {
+      "id": "qiaomu-reader",
+      "name": { "zh": "乔木 Reader", "en": "Qiaomu Reader" },
+      "description": { "zh": "读 EPUB、PDF、MOBI，划线成为笔记；首页显示正在读的书和进度。", "en": "Read EPUB, PDF and MOBI with highlights as notes; Home shows books in progress." },
+      "author": "向阳乔木",
+      "repo": "https://github.com/joeseesun/qiaomu-reader",
+      "icon": "book-open",
+      "store": true
+    },
+    {
+      "id": "qiaomu-ai-rss",
+      "name": { "zh": "乔木 RSS", "en": "Qiaomu RSS" },
+      "description": { "zh": "AI 改写与翻译的信息流；首页显示最新未读文章。", "en": "AI-rewritten feeds; Home shows the newest unread articles." },
+      "author": "向阳乔木",
+      "repo": "https://github.com/joeseesun/qiaomu-ai-rss",
+      "icon": "rss",
+      "store": true
+    },
+    {
+      "id": "qiaomu-radio",
+      "name": { "zh": "乔木电台", "en": "Qiaomu Radio" },
+      "description": { "zh": "写作时听全球电台；首页显示正在播放和最近电台。", "en": "Live radio while you write; Home shows what's playing and recent stations." },
+      "author": "向阳乔木",
+      "repo": "https://github.com/joeseesun/qiaomu-radio",
+      "icon": "radio-tower",
+      "store": true
+    },
+    {
+      "id": "qiaomu-agent",
+      "name": { "zh": "乔木 Agent", "en": "Qiaomu Agent" },
+      "description": { "zh": "用本地 Agent 或模型 API 和笔记库对话；首页显示最近对话。", "en": "Chat with your vault using local agents or model APIs; Home shows recent conversations." },
+      "author": "向阳乔木",
+      "repo": "https://github.com/joeseesun/qiaomu-agent",
+      "icon": "tree-deciduous",
+      "store": true
+    }
+  ]
+}

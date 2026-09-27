@@ -1,4 +1,8 @@
-import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { HomeTaskIndex } from "./task-index";
+import { AmbientPlayer } from "./ambient";
+import { moment, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { appendToDaily } from "./today";
+import { isChinese } from "./i18n";
 import { renameShortcutTargets } from "./shortcuts";
 import { t } from "./i18n";
 import { DEFAULT_SETTINGS, normalizeSettings, type HomeSettings } from "./settings";
@@ -12,6 +16,9 @@ const CLAIM_DELAY_MS = 40;
 export default class QiaomuHomePlugin extends Plugin {
   settings: HomeSettings = structuredClone(DEFAULT_SETTINGS);
   wallpaper!: WallpaperService;
+  taskIndex!: HomeTaskIndex;
+  readonly ambient = new AmbientPlayer();
+  private completingFocus = false;
   private homeSettingTab!: HomeSettingTab;
   private saveQueue: Promise<void> = Promise.resolve();
   private claimTimer: number | null = null;
@@ -20,8 +27,18 @@ export default class QiaomuHomePlugin extends Plugin {
   async onload(): Promise<void> {
     this.settings = normalizeSettings(await this.loadData());
     this.wallpaper = new WallpaperService(this);
+    this.taskIndex = new HomeTaskIndex(this.app);
+    this.register(() => this.taskIndex.clear());
+    this.register(() => this.ambient.destroy());
+    this.registerInterval(window.setInterval(() => this.completeFocusIfDue(), 1000));
     this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
       let todoRenamed = false;
+      const renamed = (path: string) => path === oldPath || path.startsWith(`${oldPath}/`) ? file.path + path.slice(oldPath.length) : path;
+      for (const page of this.settings.pages) for (const options of Object.values(page.moduleOptions)) {
+        for (const key of ["path", "folder"] as const) if (options[key] && renamed(options[key]) !== options[key]) { options[key] = renamed(options[key]); todoRenamed = true; }
+        if (options.paths) { const next = options.paths.map(renamed); if (next.some((path, index) => path !== options.paths![index])) { options.paths = next; todoRenamed = true; } }
+      }
+      for (const key of ["captureInboxPath", "reviewFolder", "createFolder"] as const) if (this.settings[key] && renamed(this.settings[key]) !== this.settings[key]) { this.settings[key] = renamed(this.settings[key]); todoRenamed = true; }
       if (this.settings.todoPath === oldPath || this.settings.todoPath.startsWith(`${oldPath}/`)) {
         this.settings.todoPath = file.path + this.settings.todoPath.slice(oldPath.length); todoRenamed = true;
       }
@@ -52,6 +69,30 @@ export default class QiaomuHomePlugin extends Plugin {
 
   onunload(): void {
     if (this.claimTimer !== null) window.clearTimeout(this.claimTimer);
+  }
+
+  /** Runs once per finished session, even with several Home tabs open or after a restart. */
+  private completeFocusIfDue(): void {
+    const session = this.settings.focusSession;
+    if (this.completingFocus || !session.endAt || Date.now() < session.endAt) return;
+    this.completingFocus = true;
+    const endAt = session.endAt, minutes = session.durationMinutes;
+    this.settings.focusSession = { ...session, endAt: 0, remainingMs: 0 };
+    // Count the session on the day it ended.
+    const day = (moment as unknown as (time: number) => { format(pattern: string): string })(endAt).format("YYYY-MM-DD");
+    const stats = this.settings.focusStats.day === day ? this.settings.focusStats : { day, count: 0, minutes: 0 };
+    this.settings.focusStats = { day, count: stats.count + 1, minutes: stats.minutes + minutes };
+    const chinese = isChinese();
+    const recent = Date.now() - endAt < 10 * 60000;
+    if (recent) new Notice(chinese ? `专注 ${minutes} 分钟完成，休息一下吧` : `${minutes}-minute focus complete. Take a break.`);
+    void (async () => {
+      await this.saveSettings();
+      if (!this.settings.focusLog) return;
+      const format = (time: number) => (moment as unknown as (time: number) => { format(pattern: string): string })(time).format("HH:mm");
+      const focus = this.settings.dailyFocus.text && this.settings.dailyFocus.day === (moment as unknown as () => { format(pattern: string): string })().format("YYYY-MM-DD") ? ` · ${this.settings.dailyFocus.text}` : "";
+      await appendToDaily(this.app, `- ${format(endAt - minutes * 60000)}–${format(endAt)} ${chinese ? `专注 ${minutes} 分钟` : `Focused ${minutes} min`}${focus}`);
+    })().catch((error: unknown) => new Notice(chinese ? `专注记录未写入：${error instanceof Error ? error.message : String(error)}` : `Focus log not written: ${error instanceof Error ? error.message : String(error)}`))
+      .finally(() => { this.completingFocus = false; });
   }
 
   eachView(callback: (view: HomeView) => void): void {

@@ -1,8 +1,9 @@
+import { folderDropdown } from "./extra-ui";
 import { AbstractInputSuggest, FuzzySuggestModal, PluginSettingTab, Notice, SecretComponent, Setting, TFile, setIcon, type App } from "obsidian";
 import { listCommands } from "./ecosystem";
 import { isChinese, t } from "./i18n";
 import type QiaomuHomePlugin from "./main";
-import { currentPage, type Headline, type WallpaperRotation, type WallpaperSource } from "./settings";
+import { PAGE_TEMPLATES, currentPage, type Headline, type PageTemplate, type WallpaperRotation, type WallpaperSource } from "./settings";
 import { collectActions } from "./view";
 import { isImagePath } from "./wallpaper/wallpaper";
 
@@ -121,7 +122,7 @@ export class HomeSettingTab extends PluginSettingTab {
       iconButton(row.controlEl,"trash-2",t("pages.delete"),()=>new DeletePageModal(this.app,page.name||t("pages.default"),async()=>{removePage(settings,page.id);await save();this.renderSettings();}).open(),page.id===settings.homePageId);
     }
     const preset=new Setting(containerEl).setName(L("添加预设页签","Add a preset page")).setDesc(L("现有内容保持不变。新页签可改名、删除或重新布置。","Keeps existing content. New preset pages can be renamed, removed or customized."));
-    for(const kind of ["reading","entertainment"] as const)preset.addButton(button=>button.setButtonText(kind==="reading"?L("阅读","Reading"):L("娱乐","Entertainment")).onClick(async()=>{button.setDisabled(true);addPresetPage(settings,kind);await save();this.renderSettings();}));
+    preset.addDropdown(dropdown=>{dropdown.addOption("",L("选择模板…","Choose a template…"));for(const [kind,item] of Object.entries(PAGE_TEMPLATES))dropdown.addOption(kind,`${L(item.zh,item.en)} · ${L(item.descZh,item.descEn)}`);dropdown.onChange(async value=>{if(!value)return;dropdown.setDisabled(true);addPresetPage(settings,value as PageTemplate);await save();this.renderSettings();});});
     const page=currentPage(settings);
     new Setting(containerEl).setName(L("当前页显示插件推荐","Show plugin suggestions on current page")).setDesc(page.name||t("pages.default"))
       .addToggle(toggle=>toggle.setValue(page.showRecommendations).onChange(async value=>{page.showRecommendations=value;await save();}));
@@ -240,6 +241,9 @@ export class HomeSettingTab extends PluginSettingTab {
           settings.captureInboxPath = value.trim(); await save(false);
         }));
     }
+    new Setting(containerEl).setName(L("新笔记位置","Where new notes go")).setHeading();
+    folderDropdown(containerEl,this.plugin,L("Home 新建的笔记","Notes created by Home"),L("Obsidian 默认新笔记位置","Obsidian's new-note location"),settings.createFolder,value=>{settings.createFolder=value;void save(false);})
+      .setDesc(createFragment(f=>{f.createDiv({text:L("视频笔记、本周回顾和模板速建默认放在这里；卡片设置里可单独指定。","Video notes, weekly reviews and template notes go here unless a card chooses its own folder.")});}));
     new Setting(containerEl).setName(L("今日代办","Today’s tasks")).setHeading();
     renderTodoPreferences(containerEl,this.plugin,()=>this.renderSettings());
   }

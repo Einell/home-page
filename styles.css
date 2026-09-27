@@ -407,6 +407,22 @@
   font-size: 13px;
 }
 
+.qh-native-preview { display: flex; flex-direction: column; gap: 5px; padding: 5px 0; min-width: 0; }
+.qh-native-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qh-text); font-size: 13px; line-height: 1.6; }
+.qh-native-scope { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 0; color: var(--qh-faint); font-size: 12px; }
+.qh-root .qh-native-open { margin: 6px 0 2px; padding: 4px 0; border: 0; background: transparent; box-shadow: none; color: var(--qh-muted); font-size: 12px; cursor: pointer; }
+.qh-root .qh-native-open:hover { color: var(--qh-text); background: transparent; box-shadow: none; }
+.qh-root .qh-native-open:focus-visible { outline: 1px solid var(--qh-focus); outline-offset: 2px; border-radius: 3px; }
+.qh-root .qh-native-open:disabled { opacity: 0.65; cursor: default; }
+.qh-discovery-input { width: 100%; margin: 8px 0; padding: 7px 10px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); color: var(--text-normal); }
+.qh-discovery-input:focus-visible { outline: 1px solid var(--qh-focus); outline-offset: 1px; box-shadow: none; }
+.qh-discovery-sites { display: flex; flex-wrap: wrap; gap: 7px; }
+.qh-discovery-site { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 6px 9px; border: 1px solid var(--background-modifier-border); border-radius: 8px; background: var(--background-primary); color: var(--text-normal); font-size: 12px; cursor: pointer; }
+.qh-discovery-site svg { width: 14px; height: 14px; }
+.qh-discovery-site[aria-pressed="false"] { opacity: 0.55; }
+.qh-discovery-site:focus-visible { outline: 1px solid var(--qh-focus); outline-offset: 2px; box-shadow: none; }
+.qh-native-count { margin-top: 6px; font-size: 18px; font-weight: 600; color: var(--qh-text); }
+
 
 
 
@@ -788,7 +804,7 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-library-heading { display: flex; align-items: center; gap: 8px; font-weight: 600; }
 .qh-library-heading svg, .qh-library-skeleton svg { width: 18px; height: 18px; flex: none; }
 .qh-library-source, .qh-library-description, .qh-library-status { font-size: var(--font-small); color: var(--text-muted); }
-.qh-library-preview { background: var(--background-secondary); border-radius: 8px; padding: 12px; min-height: 100px; }
+.qh-library-preview { background: var(--background-secondary); border-radius: 8px; padding: 6px 12px; }
 .qh-library-preview-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-small); line-height: 26px; }
 .qh-library-skeleton { display: flex; align-items: center; gap: 10px; height: 26px; color: var(--text-faint); }
 .qh-library-skeleton-text { height: 6px; width: 70%; border-radius: 4px; background: var(--background-modifier-border); }
@@ -1011,3 +1027,286 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 
 .qh-settings .qh-settings-identity .setting-item-heading { margin:0;padding:0;min-height:0; }
 .qh-settings .qh-settings-identity .setting-item-name { margin:0;font-size:22px;line-height:1.25;font-weight:650; }
+
+/* Opt-in workflow cards share the quiet native Home surface. */
+.qh-ui .qh-library-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 16px; }
+.qh-ui .qh-library-filters button { box-shadow: none; background: transparent; color: var(--text-muted); border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 6px 10px; }
+.qh-ui .qh-library-filters button[aria-pressed="true"] { background: var(--background-modifier-hover); color: var(--text-normal); font-weight: 600; }
+.qh-ui .qh-workflow-row { display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; height: auto; text-align: start; padding: 8px 0; background: transparent; box-shadow: none; border: 0; white-space: normal; }
+.qh-ui .qh-workflow-title { color: var(--qh-text, var(--text-normal)); line-height: 1.5; overflow-wrap: anywhere; }
+.qh-ui .qh-workflow-row .qh-item-sub { overflow-wrap: anywhere; white-space: normal; font-size: var(--font-ui-smaller); }
+.qh-ui .qh-workflow-task { display: flex; align-items: flex-start; gap: 9px; }
+.qh-ui .qh-task-check { display: flex; padding-top: 11px; }
+.qh-ui .qh-workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.qh-ui .qh-focus-clock { font-size: clamp(28px, 4vw, 42px); line-height: 1.3; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.qh-ui .qh-calendar-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.qh-ui .qh-calendar-day { color: var(--qh-text, var(--text-normal)); height: 40px; padding: 3px; box-shadow: none; background: transparent; border: 1px solid transparent; font-size: var(--font-ui-smaller); }
+.qh-ui .qh-calendar-day[aria-current="date"] { border-color: var(--qh-muted, var(--text-muted)); font-weight: 600; }
+.qh-ui .qh-calendar-day:disabled { opacity: 0.4; }
+.qh-ui .qh-goal-bar { width: 100%; height: 8px; accent-color: var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-workflow-row:focus-visible, .qh-ui .qh-calendar-day:focus-visible, .qh-ui .qh-library-filters button:focus-visible { outline: 1px solid var(--text-muted); outline-offset: 2px; }
+.qh-ui .qh-habit-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; line-height: 1.5; overflow-wrap: anywhere; }
+
+.qh-root .qh-discovery-input, .qh-root .qh-discovery-site { color: var(--qh-text); background: var(--qh-field); border-color: var(--qh-border); box-shadow: none; }
+.qh-root .qh-discovery-input::placeholder { color: var(--qh-faint); }
+.qh-root .qh-workflow-row:hover { background: var(--qh-hover); border-radius: 5px; }
+.qh-root .qh-workflow-row:focus-visible, .qh-root .qh-calendar-day:focus-visible { outline-color: var(--qh-focus); }
+
+/* Library: category chips, grouped sections and per-card actions. */
+.qh-ui .qh-library-filters { align-items: center; position: sticky; top: 0; z-index: 1; padding: 6px 0; background: var(--modal-background, var(--background-primary)); }
+.qh-ui .qh-library-filters .qh-library-chip { display: inline-flex; align-items: center; gap: 6px; height: auto; }
+.qh-ui .qh-library-chip-icon svg { width: 14px; height: 14px; }
+.qh-ui .qh-library-count { color: var(--text-faint); font-size: var(--font-ui-smaller); font-variant-numeric: tabular-nums; font-weight: 400; }
+.qh-ui .qh-library-only-new { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; color: var(--text-muted); font-size: var(--font-ui-small); cursor: pointer; }
+.qh-library-list { display: flex; flex-direction: column; gap: 6px; }
+.qh-library-group { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; font-size: var(--font-ui-medium); font-weight: 600; }
+.qh-library-group:first-child { margin-top: 4px; }
+.qh-library-group svg { width: 16px; height: 16px; color: var(--text-muted); }
+.qh-library-heading > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-library-badge { flex: none; padding: 1px 7px; border-radius: 999px; background: var(--background-modifier-hover); color: var(--text-muted); font-size: var(--font-ui-smaller); font-weight: 500; }
+.qh-library-module.is-added { background: var(--background-secondary-alt, var(--background-secondary)); }
+.qh-library-actions { display: flex; gap: 8px; margin-top: auto; }
+.qh-options-about { color: var(--text-muted); margin-top: 0; }
+.qh-option-results .setting-item { padding-inline-start: 12px; }
+
+/* Second-wave Home cards. */
+.qh-ui .qh-progress-row { display: grid; grid-template-columns: 3em 1fr 4.5em; align-items: center; gap: 10px; font-size: 13px; line-height: 1.9; }
+.qh-ui .qh-progress-label { color: var(--qh-muted, var(--text-muted)); white-space: nowrap; }
+.qh-ui .qh-progress-value { min-width: 3.5em; text-align: end; color: var(--qh-text, var(--text-normal)); font-variant-numeric: tabular-nums; }
+.qh-ui .qh-clock-row { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; }
+.qh-ui .qh-clock-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-clock-offset { color: var(--qh-faint, var(--text-faint)); font-size: 12px; }
+.qh-ui .qh-clock-time { font-size: 20px; font-variant-numeric: tabular-nums; color: var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-weather-now { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.qh-ui .qh-weather-now .qh-native-count { margin: 0; font-size: 28px; }
+.qh-ui .qh-weather-icon svg { width: 18px; height: 18px; }
+.qh-ui .qh-weather-now .qh-weather-icon svg { width: 26px; height: 26px; }
+.qh-ui .qh-weather-day { display: grid; grid-template-columns: 3.5em 20px 1fr auto; align-items: center; gap: 8px; font-size: 13px; line-height: 1.9; color: var(--qh-muted, var(--text-muted)); }
+.qh-ui .qh-weather-temp { color: var(--qh-text, var(--text-normal)); font-variant-numeric: tabular-nums; }
+.qh-ui a.qh-native-scope { text-decoration: none; }
+.qh-ui .qh-quote { font-size: 15px; line-height: 1.75; color: var(--qh-text, var(--text-normal)); overflow-wrap: anywhere; }
+.qh-ui .qh-flash-question { font-weight: 600; line-height: 1.6; color: var(--qh-text, var(--text-normal)); overflow-wrap: anywhere; }
+.qh-ui .qh-flash-answer:not(:empty) { padding: 6px 10px; border-inline-start: 2px solid var(--qh-border, var(--background-modifier-border)); color: var(--qh-text, var(--text-normal)); line-height: 1.6; overflow-wrap: anywhere; }
+.qh-ui .qh-snippet-row { display: flex; align-items: center; gap: 6px; }
+.qh-ui .qh-snippet-row .qh-workflow-row { flex: 1; }
+.qh-ui .qh-agenda-day { margin-top: 6px; color: var(--qh-faint, var(--text-faint)); font-size: 12px; }
+.qh-ui .qh-agenda-row { display: grid; grid-template-columns: 6.5em 1fr; gap: 8px; padding: 3px 0; font-size: 13px; }
+.qh-ui .qh-agenda-time { color: var(--qh-muted, var(--text-muted)); font-variant-numeric: tabular-nums; }
+.qh-ui .qh-agenda-text { min-width: 0; }
+.qh-ui .qh-volume { flex: 1; min-width: 90px; accent-color: var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-heatmap { display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px; margin: 6px 0; overflow-x: auto; }
+.qh-ui .qh-heat-cell { border-radius: 2px; background: var(--qh-border, var(--background-modifier-border)); }
+.qh-ui .qh-heat-cell.is-blank { background: transparent; }
+.qh-ui .qh-heat-1 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 30%, transparent); }
+.qh-ui .qh-heat-2 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 52%, transparent); }
+.qh-ui .qh-heat-3 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 76%, transparent); }
+.qh-ui .qh-heat-4 { background: var(--qh-live, #2fb67c); }
+.qh-ui .qh-focus-done.is-done span { text-decoration: line-through; color: var(--qh-muted, var(--text-muted)); }
+.qh-root .qh-discovery-site[aria-pressed="true"] { border-color: var(--qh-focus); }
+.modal.qh-ui textarea { width: min(320px, 60vw); font-family: var(--font-monospace); font-size: var(--font-ui-small); }
+.qh-ui .qh-native-preview > .qh-native-open { align-self: flex-start; }
+
+/* ---------------------------------------------------------------------------
+   Fields, focus and actions. Obsidian's `input[type=text]:not(:disabled):hover`
+   (specificity 0,3,1) used to swap in the theme's light field while our text
+   stayed light, and two outline rules stacked into a double ring on focus.
+   Every state is declared here with higher specificity, so themes cannot mix
+   our text colour with their field colour.
+--------------------------------------------------------------------------- */
+.qh-root {
+  --qh-border-strong: var(--background-modifier-border-hover);
+  --qh-field-hover: var(--background-primary);
+  --qh-field-focus: var(--background-primary);
+  --qh-field-border-focus: var(--interactive-accent);
+  --qh-ring: color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+  --qh-focus-ring: color-mix(in srgb, var(--interactive-accent) 80%, transparent);
+}
+.qh-root.qh-has-photo {
+  --qh-border-strong: rgba(255, 255, 255, 0.26);
+  --qh-field-hover: rgba(24, 24, 28, 0.62);
+  --qh-field-focus: rgba(14, 14, 18, 0.74);
+  --qh-field-border-focus: rgba(255, 255, 255, 0.46);
+  --qh-ring: rgba(255, 255, 255, 0.12);
+  --qh-focus-ring: rgba(255, 255, 255, 0.72);
+  /* Obsidian's checkbox tokens assume a normal background. */
+  --checkbox-border-color: rgba(255, 255, 255, 0.55);
+  --checkbox-border-color-hover: rgba(255, 255, 255, 0.85);
+  --checkbox-color: rgba(255, 255, 255, 0.92);
+  --checkbox-color-hover: #fff;
+  --checkbox-marker-color: #16161a;
+}
+
+.qh-root .qh-card :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input:not([type]), textarea) {
+  height: 36px; padding: 0 12px; border: 1px solid var(--qh-border); border-radius: 8px;
+  background: var(--qh-field); color: var(--qh-text); caret-color: var(--qh-text);
+  font-size: 14px; box-shadow: none; outline: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.qh-root .qh-card :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input:not([type]), textarea):is(:hover) {
+  background: var(--qh-field-hover); border-color: var(--qh-border-strong); color: var(--qh-text);
+}
+.qh-root .qh-card :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input:not([type]), textarea):is(:focus, :focus-visible, :active) {
+  background: var(--qh-field-focus); border-color: var(--qh-field-border-focus); color: var(--qh-text);
+  box-shadow: 0 0 0 3px var(--qh-ring); outline: none;
+}
+.qh-root .qh-card :is(input, textarea)::placeholder { color: var(--qh-faint); opacity: 1; }
+.qh-root .qh-card input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); opacity: 0.6; cursor: pointer; }
+
+/* Input with an inline submit, shared by capture, focus, templates and search cards. */
+.qh-root .qh-field-row { display: flex; gap: 8px; margin: 8px 0 4px; }
+.qh-root .qh-field-row .qh-discovery-input { flex: 1; width: auto; min-width: 0; margin: 0; }
+.qh-root .qh-field-submit, .qh-root .qh-todo-form button {
+  display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; padding: 0;
+  border: 1px solid var(--qh-border); border-radius: 8px; background: var(--qh-field); color: var(--qh-muted);
+  box-shadow: none; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.qh-root .qh-field-submit svg, .qh-root .qh-todo-form button svg { width: 16px; height: 16px; }
+.qh-root .qh-field-submit:hover, .qh-root .qh-todo-form button:hover { background: var(--qh-hover); border-color: var(--qh-border-strong); color: var(--qh-text); }
+.qh-root .qh-field-submit:disabled { opacity: 0.5; cursor: default; }
+
+/* Card actions: quiet ghost buttons that still look pressable; `is-primary` marks the main action. */
+.qh-root .qh-native-open {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; margin: 6px 0 0 -8px; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 7px; background: transparent; box-shadow: none;
+  color: var(--qh-muted); font-size: 12.5px; line-height: 1; cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.qh-root .qh-native-open:hover { background: var(--qh-hover); color: var(--qh-text); }
+.qh-root .qh-native-open .qh-action-icon { display: inline-flex; }
+.qh-root .qh-native-open .qh-action-icon svg { width: 14px; height: 14px; }
+.qh-root .qh-native-open.is-primary { margin-inline-start: 0; padding: 0 12px; background: var(--qh-field); border-color: var(--qh-border); color: var(--qh-text); }
+.qh-root .qh-native-open.is-primary:hover { background: var(--qh-hover); border-color: var(--qh-border-strong); }
+.qh-root .qh-native-open:disabled, .qh-root .qh-native-open:disabled:hover { opacity: 0.55; background: transparent; cursor: default; }
+.qh-ui .qh-workflow-actions { gap: 4px 6px; margin-top: 2px; }
+.qh-ui .qh-workflow-actions > .qh-native-open { margin-top: 4px; }
+.qh-ui .qh-workflow-actions > .qh-native-open:not(:first-child) { margin-inline-start: 0; }
+
+/* Chips: clear hover and a visible selected state. */
+.qh-root .qh-discovery-site { transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease; }
+.qh-root .qh-discovery-site:hover { background: var(--qh-hover); border-color: var(--qh-border-strong); }
+.qh-root .qh-discovery-site[aria-pressed="true"] { background: var(--qh-hover); border-color: var(--qh-field-border-focus); color: var(--qh-text); }
+.qh-root .qh-discovery-site[aria-pressed="false"] { opacity: 0.6; }
+.qh-root .qh-discovery-site[aria-pressed="false"]:hover { opacity: 0.9; }
+.qh-ui .qh-chip-count { color: var(--qh-faint, var(--text-faint)); font-variant-numeric: tabular-nums; }
+
+/* One focus ring for every Home control, instead of 1px/3px/accent variants. */
+.qh-root :is(button, a, [role="button"], [tabindex]:not([tabindex="-1"]), summary):focus-visible {
+  outline: 2px solid var(--qh-focus-ring); outline-offset: 2px; box-shadow: none;
+}
+.qh-root .qh-page-tab:focus-visible, .qh-root .qh-page-add:focus-visible { outline-offset: -2px; }
+.qh-root .qh-grid:focus-visible { outline: none; }
+.qh-root input[type="checkbox"]:focus-visible { outline: 2px solid var(--qh-focus-ring); outline-offset: 2px; box-shadow: none; }
+
+/* Slider: a slim track and a small round thumb that reads on photos and plain backgrounds. */
+.qh-root .qh-card input[type="range"] { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: var(--qh-border-strong); cursor: pointer; }
+.qh-root .qh-card input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border: 0; border-radius: 50%;
+  background: var(--qh-text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); cursor: pointer;
+}
+.qh-root .qh-card input[type="range"]:focus-visible { outline: 2px solid var(--qh-focus-ring); outline-offset: 4px; }
+
+.qh-ui .qh-weather-icon { display: inline-flex; align-items: center; }
+
+/* Modal fields: Obsidian's own focus look, without the extra offset outline. */
+.modal.qh-ui :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input[type="date"], textarea):focus-visible {
+  outline: none; border-color: var(--interactive-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Plugin guides, list rows and small primitives shared by integration cards.
+--------------------------------------------------------------------------- */
+.qh-ui .is-hidden { display: none !important; }
+.qh-ui .qh-plugin-guide { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 2px; }
+.qh-ui .qh-plugin-guide-pitch { color: var(--qh-text, var(--text-normal)); font-size: 13.5px; line-height: 1.6; }
+.qh-ui .qh-plugin-guide-status { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; padding: 3px 9px; border-radius: 999px; background: var(--qh-hover, var(--background-modifier-hover)); color: var(--qh-muted, var(--text-muted)); font-size: 12px; }
+.qh-ui .qh-plugin-guide-status svg { width: 13px; height: 13px; }
+.qh-ui .qh-plugin-guide .qh-workflow-actions > .qh-native-open { margin-top: 2px; }
+.qh-root .qh-list-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; height: auto; margin: 0 -8px; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; box-shadow: none; text-align: start; color: var(--qh-text); cursor: pointer; white-space: normal; box-sizing: content-box; }
+.qh-root .qh-list-row:hover { background: var(--qh-hover); }
+.qh-root .qh-list-row-icon { display: inline-flex; padding-top: 2px; color: var(--qh-muted); }
+.qh-root .qh-list-row-icon svg { width: 15px; height: 15px; }
+.qh-root .qh-list-row-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.qh-root .qh-list-row-text .qh-workflow-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-root .qh-list-row-text .qh-item-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-ui .qh-code-line { padding: 5px 9px; border-radius: 6px; background: var(--qh-field, var(--background-secondary)); color: var(--qh-muted, var(--text-muted)); font-family: var(--font-monospace); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-ui .qh-path-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 2px 8px; border-radius: 6px; background: var(--background-modifier-hover); color: var(--text-normal); font-size: var(--font-ui-smaller); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-ui .qh-path-chip svg { width: 12px; height: 12px; flex: none; color: var(--text-muted); }
+
+/* Segmented control (GitHub lists). */
+.qh-ui .qh-segment { display: flex; gap: 2px; padding: 3px; margin: 6px 0; border-radius: 9px; background: var(--qh-field, var(--background-secondary)); border: 1px solid var(--qh-border, var(--background-modifier-border)); }
+.qh-root .qh-segment-item { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; box-shadow: none; color: var(--qh-muted); font-size: 12.5px; cursor: pointer; }
+.qh-root .qh-segment-item:hover { color: var(--qh-text); }
+.qh-root .qh-segment-item[aria-selected="true"] { background: var(--qh-hover); color: var(--qh-text); font-weight: 600; }
+.qh-ui .qh-github-foot { display: flex; align-items: center; justify-content: space-between; }
+.qh-ui .qh-device-code { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.qh-ui .qh-device-code-value { font-family: var(--font-monospace); font-size: 22px; letter-spacing: 0.12em; padding: 8px 14px; }
+
+/* Note activity: stat tiles and a heatmap that fills the card. */
+.qh-ui .qh-stat-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 14px; }
+.qh-ui .qh-stat-tile { padding: 10px 12px; border-radius: 10px; background: var(--qh-field, var(--background-secondary)); border: 1px solid var(--qh-border, var(--background-modifier-border)); min-width: 0; }
+.qh-ui .qh-stat-value { font-size: 22px; font-weight: 650; line-height: 1.15; color: var(--qh-text, var(--text-normal)); font-variant-numeric: tabular-nums; }
+.qh-ui .qh-stat-label { margin-top: 2px; font-size: 11.5px; color: var(--qh-muted, var(--text-muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-ui .qh-heat { width: 100%; min-width: 0; }
+.qh-ui .qh-heat-months { display: grid; gap: 3px; height: 15px; margin-inline-start: 22px; font-size: 10.5px; color: var(--qh-faint, var(--text-faint)); white-space: nowrap; }
+.qh-ui .qh-heat-months span { overflow: visible; }
+.qh-ui .qh-heat-frame { display: flex; gap: 6px; }
+.qh-ui .qh-heat-weekdays { display: grid; grid-template-rows: repeat(7, 12px); gap: 3px; width: 16px; font-size: 10px; line-height: 12px; color: var(--qh-faint, var(--text-faint)); }
+.qh-ui .qh-heatmap { display: grid; grid-template-rows: repeat(7, 12px); grid-auto-flow: column; gap: 3px; margin: 0; overflow: visible; }
+.qh-ui .qh-heat-cell { width: 12px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--qh-text, var(--text-normal)) 9%, transparent); transition: transform 0.12s ease; }
+.qh-ui .qh-heat-cell:hover { transform: scale(1.25); }
+.qh-ui .qh-heat-cell.has-note { cursor: pointer; }
+.qh-ui .qh-heat-cell.is-today { box-shadow: 0 0 0 1.5px var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-heat-1 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 32%, transparent); }
+.qh-ui .qh-heat-2 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 55%, transparent); }
+.qh-ui .qh-heat-3 { background: color-mix(in srgb, var(--qh-live, #2fb67c) 78%, transparent); }
+.qh-ui .qh-heat-4 { background: var(--qh-live, #2fb67c); }
+.qh-ui .qh-heat-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--qh-muted, var(--text-muted)); }
+.qh-ui .qh-heat-legend { display: flex; align-items: center; gap: 3px; font-size: 11px; color: var(--qh-faint, var(--text-faint)); }
+.qh-ui .qh-heat-legend .qh-heat-cell { width: 10px; height: 10px; border-radius: 2px; }
+.qh-ui .qh-heat-legend .qh-heat-cell:hover { transform: none; }
+
+/* Focus timer: a ring that empties as time runs. */
+.qh-ui .qh-focus-dial { position: relative; width: 148px; height: 148px; margin: 6px auto 8px; }
+.qh-ui .qh-focus-dial svg { width: 100%; height: 100%; }
+.qh-ui .qh-focus-track { fill: none; stroke: var(--qh-border, var(--background-modifier-border)); stroke-width: 6; }
+.qh-ui .qh-focus-arc { fill: none; stroke: var(--qh-text, var(--text-normal)); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.9s linear; opacity: 0.85; }
+.qh-ui .qh-focus-dial.is-running .qh-focus-arc { stroke: var(--qh-live, #2fb67c); opacity: 1; }
+.qh-ui .qh-focus-dial.is-done .qh-focus-arc { opacity: 0; }
+.qh-ui .qh-focus-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.qh-ui .qh-focus-dial .qh-focus-clock { font-size: 32px; font-weight: 600; line-height: 1.1; }
+.qh-ui .qh-focus-status { font-size: 12px; color: var(--qh-muted, var(--text-muted)); }
+.qh-ui .qh-focus-presets { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.qh-ui .qh-focus-actions { justify-content: center; }
+.qh-ui .qh-focus-actions > .qh-native-open { margin-inline-start: 0; }
+.qh-ui .qh-focus-today { text-align: center; }
+
+/* Countdown hero. */
+.qh-ui .qh-countdown { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 2px; }
+.qh-ui .qh-countdown-label { color: var(--qh-muted, var(--text-muted)); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qh-ui .qh-countdown-figure { display: flex; align-items: baseline; gap: 6px; color: var(--qh-text, var(--text-normal)); }
+.qh-ui .qh-countdown-prefix, .qh-ui .qh-countdown-unit { font-size: 14px; color: var(--qh-muted, var(--text-muted)); }
+.qh-ui .qh-countdown-number { font-size: 44px; font-weight: 650; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.qh-ui .qh-countdown-date { color: var(--qh-faint, var(--text-faint)); font-size: 12px; }
+.qh-ui .qh-countdown.is-past .qh-countdown-number { color: var(--qh-muted, var(--text-muted)); }
+
+/* Library extras. */
+.qh-library-requires, .qh-library-note { display: flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.qh-library-requires svg, .qh-library-note svg { width: 13px; height: 13px; flex: none; }
+.qh-library-note { padding: 8px 12px; margin-bottom: 4px; border-radius: 8px; background: var(--background-secondary); }
+.qh-library-build { background: linear-gradient(135deg, color-mix(in srgb, var(--interactive-accent) 10%, transparent), transparent 70%); }
+.qh-library-steps { margin: 0; padding-inline-start: 20px; color: var(--text-muted); font-size: var(--font-ui-small); line-height: 1.8; }
+
+/* New page templates. */
+.qh-template-hint { color: var(--text-muted); margin-bottom: 10px; }
+.qh-template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.qh-ui .qh-template-option { display: flex; align-items: flex-start; gap: 10px; height: auto; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 10px; background: transparent; box-shadow: none; text-align: start; white-space: normal; cursor: pointer; }
+.qh-ui .qh-template-option:hover { background: var(--background-modifier-hover); }
+.qh-ui .qh-template-option[aria-checked="true"] { border-color: var(--interactive-accent); background: color-mix(in srgb, var(--interactive-accent) 8%, transparent); }
+.qh-template-icon { display: inline-flex; padding-top: 2px; color: var(--text-muted); }
+.qh-template-icon svg { width: 18px; height: 18px; }
+.qh-template-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qh-template-name { font-weight: 600; }
+.qh-template-desc { color: var(--text-muted); font-size: var(--font-ui-smaller); line-height: 1.45; }
+.qh-ui .qh-plugin-guide > .qh-native-open { align-self: flex-start; margin-inline-start: 0; }
+.qh-ui .qh-template-option { justify-content: flex-start; }
+.qh-library-retry { margin-inline-start: auto; }

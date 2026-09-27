@@ -9,6 +9,8 @@ export interface KnownPlugin {
   icon: string;
   /** Command that opens the plugin's main view; used when the installed version predates the Home protocol. */
   openCommand: string;
+  /** Source and documentation, shown next to the install button. */
+  repo: string;
 }
 
 export const KNOWN_PLUGINS: KnownPlugin[] = [
@@ -18,6 +20,7 @@ export const KNOWN_PLUGINS: KnownPlugin[] = [
     pitch: { zh: "在 Obsidian 里读 EPUB、PDF、MOBI，划线直接成为笔记", en: "Read EPUB, PDF and MOBI with highlights that become notes" },
     icon: "book-open",
     openCommand: "qiaomu-reader:open-library",
+    repo: "https://github.com/joeseesun/qiaomu-reader",
   },
   {
     id: "qiaomu-ai-rss",
@@ -25,6 +28,7 @@ export const KNOWN_PLUGINS: KnownPlugin[] = [
     pitch: { zh: "AI 改写与翻译的信息流，一键摘进日记", en: "AI-rewritten feeds you can clip into your daily note" },
     icon: "rss",
     openCommand: "qiaomu-ai-rss:open-reader",
+    repo: "https://github.com/joeseesun/qiaomu-ai-rss",
   },
   {
     id: "qiaomu-radio",
@@ -32,6 +36,7 @@ export const KNOWN_PLUGINS: KnownPlugin[] = [
     pitch: { zh: "写作时听全球电台，越听越懂你的口味", en: "Live radio from around the world while you write" },
     icon: "radio-tower",
     openCommand: "qiaomu-radio:open-radio",
+    repo: "https://github.com/joeseesun/qiaomu-radio",
   },
   {
     id: "qiaomu-agent",
@@ -39,6 +44,7 @@ export const KNOWN_PLUGINS: KnownPlugin[] = [
     pitch: { zh: "用本地 Agent 或模型 API 和你的笔记库对话", en: "Chat with your vault using local agents or model APIs" },
     icon: "tree-deciduous",
     openCommand: "qiaomu-agent:open-agent",
+    repo: "https://github.com/joeseesun/qiaomu-agent",
   },
 ];
 
