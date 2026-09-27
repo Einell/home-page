@@ -191,7 +191,7 @@ Requires **Obsidian 1.11.4 or newer**. For manual installation, download `main.j
 
 | Feature | What it gives you |
 | --- | --- |
-| Independent pages | Home, Reading, and Entertainment presets on new installs; rename, reorder, add, or remove optional pages. Existing layouts survive upgrades. |
+| Independent pages | Home, Focus, Knowledge, Reading, Entertainment, and Explore presets on new installs; start new pages from a template or a blank page. Existing layouts survive upgrades. |
 | Module library | Preview modules, add them to a page, and configure their visibility and item count. Cards default to three items. |
 | Optional cards | 50+ opt-in cards in eight categories — today, tasks & focus, notes & review, vault upkeep, search & learning, utilities, shortcuts and integrations — including weekly review, flashcards, snippets, video notes, an .ics agenda, weather, world clock, time progress and ambient noise. Filter by category, show only cards not yet added, and add or remove in place. |
 | Daily tasks | Add and complete plain Markdown tasks in today's daily note, or a fixed note. Move unfinished tasks forward manually; automatic carry-forward is optional and off by default. |
