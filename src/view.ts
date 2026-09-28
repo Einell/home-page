@@ -583,26 +583,19 @@ export class HomeView extends ItemView {
 
   // Create row -------------------------------------------------------------
 
-  /** Today's note and "new note" sit next to search; everything else lives in the ▾ menu. */
+  /** "New note" sits next to search; other actions live in the ▾ menu. */
   private renderCreate(): void {
     const group = this.createEl;
     group.empty();
     const settings = this.plugin.settings;
     const actions = collectActions(this.app, settings);
-    const daily = settings.showDaily ? actions.find((action) => action.key === "builtin:daily") : undefined;
-    if (daily) {
-      const today = group.createEl("button", { cls: "qh-pill-button qh-today" });
-      setIcon(today.createSpan({ cls: "qh-pill-icon" }), "calendar-days");
-      today.createSpan({ cls: "qh-pill-text", text: t("new.today") });
-      today.addEventListener("click", () => this.runAction(daily));
-    }
     const split = group.createDiv({ cls: "qh-split" });
     const main = split.createEl("button", { cls: "qh-pill-button qh-new" });
     setIcon(main.createSpan({ cls: "qh-pill-icon" }), "plus");
     main.createSpan({ cls: "qh-pill-text", text: t("new.note") });
     main.addEventListener("click", () => void newNote(this.app, this.leaf, this.plugin.settings.createFolder));
     const hidden = new Set(settings.hiddenActions);
-    const more = actions.filter((action) => action !== daily && !hidden.has(action.key));
+    const more = actions.filter((action) => !hidden.has(action.key));
     const chevron = split.createEl("button", { cls: "qh-pill-button qh-new-more" });
     setIcon(chevron, "chevron-down");
     hiddenLabel(chevron, t("new.more"));

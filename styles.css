@@ -719,13 +719,11 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
     flex: 1;
   }
 
-  .qh-create > .qh-today,
   .qh-split {
     flex: 1;
   }
 
-  .qh-root .qh-split .qh-new,
-  .qh-root .qh-today {
+  .qh-root .qh-split .qh-new {
     flex: 1;
     justify-content: center;
   }

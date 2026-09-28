@@ -90,7 +90,6 @@ export interface HomeSettings {
   shortcutFavicons: boolean;
   pages: HomePage[];
   /** Show the "today" button next to search (when the daily notes command exists). */
-  showDaily: boolean;
   captureTarget: "daily" | "inbox";
   captureInboxPath: string;
   todoPath: string;
@@ -190,7 +189,6 @@ export const DEFAULT_SETTINGS: HomeSettings = {
   homeShortcutsSeeded: true,
   shortcutFavicons: true,
   pages: (["home", "focus", "knowledge", "reading", "entertainment", "explore"] as const).map(presetPage),
-  showDaily: true,
   captureTarget: "inbox",
   captureInboxPath: "Inbox.md",
   todoPath: "Home Todo.md",
@@ -383,7 +381,6 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     shortcutFavicons: true,
     activePageId: pages.some((page) => page.id === raw.activePageId) ? raw.activePageId as string : pages[0].id,
     pages,
-    showDaily: typeof raw.showDaily === "boolean" ? raw.showDaily : defaults.showDaily,
     captureTarget: pick(raw.captureTarget, ["daily", "inbox"], defaults.captureTarget),
     captureInboxPath: text(raw.captureInboxPath, defaults.captureInboxPath),
     todoPath: text(raw.todoPath, defaults.todoPath),

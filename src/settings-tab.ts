@@ -280,12 +280,8 @@ export class HomeSettingTab extends PluginSettingTab {
   private renderActions(containerEl: HTMLElement): void {
     const settings = this.plugin.settings;
     new Setting(containerEl).setName(L("新建", "Create")).setHeading();
-    new Setting(containerEl)
-      .setName(L("搜索栏旁显示「今日」", "Show “Today” next to search"))
-      .setDesc(L("一键打开今天的日记。需要启用核心插件「日记」。", "Opens today's daily note. Needs the Daily notes core plugin."))
-      .addToggle((toggle) => toggle.setValue(settings.showDaily).onChange(async (value) => { settings.showDaily = value; await this.plugin.saveSettings(); }));
     containerEl.createDiv({ cls: "setting-item-description qh-setting-note", text: L("下面是「新笔记」旁 ▾ 菜单里的项目，可排序、隐藏。", "Items in the ▾ menu next to “New note”. Reorder or hide them.") });
-    const actions = collectActions(this.app, settings).filter((action) => !(settings.showDaily && action.key === "builtin:daily"));
+    const actions = collectActions(this.app, settings);
     const keys = actions.map((action) => action.key);
     const move = async (index: number, delta: number) => {
       const order = [...keys];
