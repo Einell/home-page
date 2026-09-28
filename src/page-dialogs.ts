@@ -1,4 +1,5 @@
-import { Modal, Setting, setIcon, type App } from "obsidian";
+import { Modal, Notice, Setting, setIcon, type App } from "obsidian";
+import { guardFormComposition } from "./input-ui";
 import { isChinese, t } from "./i18n";
 import { PAGE_TEMPLATES, type PageTemplate } from "./settings";
 
@@ -7,6 +8,7 @@ export class NewPageModal extends Modal {
   onOpen(): void {
     this.setTitle(this.heading);
     const form = this.contentEl.createEl("form");
+    guardFormComposition(form);
     let value = this.initialName;
     let template: PageTemplate | null = null;
     let nameInput: HTMLInputElement | null = null;
@@ -51,6 +53,7 @@ export class NewPageModal extends Modal {
       button.disabled = true;
       void this.onCreate(value.trim(), template).then(() => this.close()).catch((error: unknown) => {
         button.disabled = false;
+        new Notice(t("layout.saveFailed"));
         console.error("Qiaomu Home: could not save a page", error);
       });
     });
@@ -67,8 +70,8 @@ export class DeletePageModal extends Modal {
       .addButton((button) => button.setButtonText(t("pages.cancel")).onClick(() => this.close()))
       .addButton((button) => button.setButtonText(t("pages.delete")).onClick(async () => {
         button.setDisabled(true);
-        await this.onDelete();
-        this.close();
+        try { await this.onDelete(); this.close(); }
+        catch { button.setDisabled(false); new Notice(t("layout.saveFailed")); }
       }));
   }
   onClose(): void { this.contentEl.empty(); }

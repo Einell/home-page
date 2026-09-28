@@ -1,4 +1,5 @@
 import { PRODUCTIVITY_MODULES, type ProductivityId } from "./productivity-catalog";
+import { isComposingKey } from "./input-ui";
 import { renderProductivity, paintFocus } from "./productivity-ui";
 import { renderBeginnerPlugins } from "./beginner-ui";
 import { renderTodo } from "./todo-ui";
@@ -111,11 +112,14 @@ export class HomeView extends ItemView {
   private rows: ResultRow[] = [];
   private activeRow = 0;
   private searchGeneration = 0;
+  private capturingSearch = false;
   private sectionsGeneration = 0;
   private photoGeneration = 0;
   private lastMinute = "";
   private lastDay = localDay();
   private discoveryDrafts = new Map<string, string>();
+  private dailyFocusDrafts = new Map<string, string>();
+  private focusSaving = false;
   private readonly refreshSoon = debounce(() => this.refreshContent(), 150, true);
   /** A refresh was requested while Home was hidden or the user was composing text; run it when that ends. */
   private stale = false;
@@ -191,7 +195,7 @@ export class HomeView extends ItemView {
     this.registerEvent(this.app.vault.on("create", () => this.requestRefresh()));
     this.registerDomEvent(root.ownerDocument, "pointerdown", (event) => {
       const target = event.target as Node | null;
-      if (target && (this.resultsEl.contains(target) || target === this.inputEl)) return;
+      if (target && this.inputEl.parentElement?.contains(target)) return;
       this.closeResults();
     });
     this.registerInterval(window.setInterval(() => this.tick(), 1000));
@@ -372,7 +376,10 @@ export class HomeView extends ItemView {
     this.inputEl = form.createEl("input", { cls: "qh-search-input", type: "search", placeholder: t("search.placeholder") });
     this.inputEl.id = `qh-search-${Math.random().toString(36).slice(2)}`;
     label.htmlFor = this.inputEl.id;
-    this.inputEl.setAttrs({ autocomplete: "off", spellcheck: "false", enterkeyhint: "search", "aria-autocomplete": "list" });
+    this.inputEl.setAttrs({ autocomplete: "off", spellcheck: "false", enterkeyhint: "search", role: "combobox", "aria-autocomplete": "list", "aria-expanded": "false" });
+    form.addEventListener("pointerdown", event => {
+      if (event.target === form) { event.preventDefault(); this.inputEl.focus(); }
+    });
     this.clearEl = form.createEl("button", { cls: "qh-icon-button qh-search-clear", type: "button" });
     setIcon(this.clearEl, "x");
     hiddenLabel(this.clearEl, t("search.clear"));
@@ -393,12 +400,14 @@ export class HomeView extends ItemView {
   }
 
   private onSearchKey(event: KeyboardEvent): void {
-    if (event.isComposing) return;
+    if (this.composing || isComposingKey(event)) return;
     const query = this.inputEl.value.trim();
     if (event.key === "Escape") {
       if (this.inputEl.value) { event.preventDefault(); this.inputEl.value = ""; this.onQuery(); }
+      else this.closeResults();
       return;
     }
+    if (event.key === "Tab") { this.closeResults(); return; }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       if (!this.rows.length) return;
       event.preventDefault();
@@ -420,15 +429,17 @@ export class HomeView extends ItemView {
   }
 
   private async capture(query: string): Promise<void> {
-    const target = this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox");
+    if (this.capturingSearch) return;
+    this.capturingSearch = true;
+    const target = t("capture.daily");
     try {
-      await captureNote(this.app, this.plugin.settings, query);
+      await captureNote(this.app, { ...this.plugin.settings, captureTarget: "daily" }, query);
       if (this.inputEl.value.trim() === query) { this.inputEl.value = ""; this.onQuery(); }
       new Notice(t("capture.saved", { target }));
       this.refreshSoon();
     } catch (error) {
       new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) }));
-    }
+    } finally { this.capturingSearch = false; }
   }
 
   private onQuery(): void {
@@ -440,10 +451,12 @@ export class HomeView extends ItemView {
   }
 
   private closeResults(): void {
+    this.searchGeneration++;
     this.resultsEl.hide();
     this.resultsEl.empty();
     this.rows = [];
     this.inputEl.setAttr("aria-expanded", "false");
+    this.inputEl.removeAttribute("aria-activedescendant");
   }
 
   private candidates(): NoteCandidate[] {
@@ -494,7 +507,7 @@ export class HomeView extends ItemView {
 
     const commands = list.createDiv({ cls: "qh-result-group qh-result-commands" });
     this.addRow(commands, { icon: "pencil-line", title: t("search.capture", { q: query,
-      target: this.plugin.settings.captureTarget === "daily" ? t("capture.daily") : t("capture.inbox") }),
+      target: t("capture.daily") }),
       hint: t("search.hint.capture"), run: () => void this.capture(query) });
     if (!notes.some((note) => note.title.toLowerCase() === query.toLowerCase())) {
       const name = noteNameFromQuery(query);
@@ -523,7 +536,9 @@ export class HomeView extends ItemView {
 
   private addRow(group: HTMLElement, row: { icon: string; title: string; detail?: string; hint?: string; run(newTab: boolean): void }): void {
     const el = group.createDiv({ cls: "qh-result" });
+    el.id = `${this.inputEl.id}-option-${this.searchGeneration}-${this.rows.length}`;
     el.setAttr("role", "option");
+    el.setAttr("aria-selected", "false");
     setIcon(el.createSpan({ cls: "qh-result-icon" }), row.icon);
     const text = el.createDiv({ cls: "qh-result-text" });
     text.createDiv({ cls: "qh-result-title", text: row.title });
@@ -537,11 +552,14 @@ export class HomeView extends ItemView {
   }
 
   private setActiveRow(index: number): void {
-    this.rows[this.activeRow]?.el.removeClass("is-active");
+    const previous = this.rows[this.activeRow]?.el;
+    previous?.removeClass("is-active"); previous?.setAttr("aria-selected", "false");
     this.activeRow = Math.max(0, Math.min(index, this.rows.length - 1));
     const row = this.rows[this.activeRow];
     if (!row) return;
     row.el.addClass("is-active");
+    row.el.setAttr("aria-selected", "true");
+    this.inputEl.setAttr("aria-activedescendant", row.el.id);
     row.el.scrollIntoView({ block: "nearest" });
   }
 
@@ -1222,7 +1240,7 @@ export class HomeView extends ItemView {
     const file = this.app.vault.getAbstractFileByPath(path);
     const body = card.createDiv({ cls: "qh-native-preview" });
     if (!(file instanceof TFile)) {
-      body.createDiv({ cls: "qh-card-empty", text: isChinese() ? `还没有收件箱笔记（${path}）。用快速记录或搜索框 ⇧↵ 记下的内容会出现在这里。` : `No Inbox note yet (${path}). Captures from Quick capture or Shift+Enter in search appear here.` });
+      body.createDiv({ cls: "qh-card-empty", text: isChinese() ? `还没有收件箱笔记（${path}）。将快速记录的目标设为收件箱，记下的内容会出现在这里。` : `No Inbox note yet (${path}). Set Quick capture to Inbox to collect entries here.` });
       cardAction(card, isChinese() ? "创建收件箱" : "Create Inbox", () => void (async () => {
         await ensureParent(this.app, path);
         if (!this.app.vault.getAbstractFileByPath(path)) await this.app.vault.create(path, "");
@@ -1285,31 +1303,40 @@ export class HomeView extends ItemView {
     const card = this.nativeCard(parent, "daily-focus", isChinese() ? "今日重点" : "Today's focus", "target");
     const list = card.createDiv({ cls: "qh-focus-list" });
     let items: FocusItem[] = [];
-    const save = async (next: FocusItem[]) => {
-      try { await writeFocus(this.plugin, next); this.requestRefresh(); }
+    const draftKey = `${currentPage(this.plugin.settings).id}:${localDay()}`;
+    const save = async (next: FocusItem[], committed?: () => void) => {
+      if (this.focusSaving) return;
+      this.focusSaving = true;
+      addFocus.disabled = true;
+      try { await writeFocus(this.plugin, next); items = next; committed?.(); }
       catch (error) {
         new Notice(error instanceof Error && error.message === "Focus property changed"
           ? (isChinese() ? "今日日记里的 focus 属性不是文字，已保留原值" : "The focus property in today's note is not text; it was left unchanged")
           : error instanceof Error ? error.message : t("layout.saveFailed"));
-        this.requestRefresh();
-      }
+      } finally { this.focusSaving = false; addFocus.disabled = false; this.requestRefresh(); }
     };
     // The field is built right away so a refresh can hand focus back to it while the list loads.
-    const { input, row: field } = fieldRow(card, {
+    const { input, row: field, submit: addFocus } = fieldRow(card, {
       placeholder: isChinese() ? "今天最重要的一件事" : "One important thing today",
       label: isChinese() ? "今日重点" : "Today's focus", icon: "plus", action: isChinese() ? "添加重点" : "Add focus", onSubmit: () => {
         const text = input.value.trim();
         if (!text) { input.focus(); return; }
-        if (items.some((item) => item.text === text)) { input.value = ""; return; }
-        input.value = "";
-        void save([...items, { text, done: false }]);
+        if (items.some((item) => item.text === text)) { input.value = ""; this.dailyFocusDrafts.delete(draftKey); return; }
+        void save([...items, { text, done: false }], () => {
+          if (this.dailyFocusDrafts.get(draftKey)?.trim() === text) this.dailyFocusDrafts.delete(draftKey);
+          if (input.value.trim() === text) input.value = "";
+        });
       },
     });
     input.maxLength = 240;
+    addFocus.disabled = true;
+    input.value = this.dailyFocusDrafts.get(draftKey) ?? "";
+    input.addEventListener("input", () => this.dailyFocusDrafts.set(draftKey, input.value));
     const note = card.createDiv({ cls: "qh-native-scope" });
     void readFocus(this.plugin).then((state) => {
       if (!card.isConnected) return;
       items = state.items;
+      addFocus.disabled = this.focusSaving;
       if (state.invalid) {
         field.hide();
         list.createDiv({ cls: "qh-card-empty", text: isChinese() ? "今日日记的 focus 属性不是文字，已保留原值。" : "The focus property in today's note is not text; it was left unchanged." });

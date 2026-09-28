@@ -228,7 +228,7 @@ export class HomeSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName(L("快速记录", "Quick capture")).setHeading();
     new Setting(containerEl)
       .setName(L("快速记录保存到", "Quick capture destination"))
-      .setDesc(L("在搜索框输入后按 ⇧↵，不离开主页。", "Type in search and press Shift+Enter without leaving Home."))
+      .setDesc(L("设置快速记录卡片的保存位置；搜索框 ⇧↵ 始终记录到今日日记。", "Choose the Quick capture card destination. Shift+Enter in search always saves to today’s daily note."))
       .addDropdown((dropdown) => dropdown
         .addOptions({ daily: L("今日日记", "Today's daily note"), inbox: "Inbox" })
         .setValue(settings.captureTarget)

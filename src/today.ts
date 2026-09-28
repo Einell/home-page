@@ -72,11 +72,20 @@ export function captureLine(text: string, format: "plain" | "time" | "task" = "p
   return [head, ...rest.filter(line => line.trim()).map(line => `  ${line.trim()}`)].join("\n");
 }
 
+/** Guide an explicit daily-note action to the host's core-plugin settings when disabled. */
+function requireDailyNotes(app: App): void {
+  if (commandExists(app, "daily-notes")) return;
+  const setting = (app as unknown as { setting?: { open?(): void; openTabById?(id: string): unknown } }).setting;
+  setting?.open?.();
+  setting?.openTabById?.("plugins");
+  throw new Error(t("capture.noDaily"));
+}
+
 /** Capture stays on Home and appends to the selected Markdown file (through the editor when it is open). */
 export async function captureNote(app: App, settings: HomeSettings, text: string): Promise<string> {
   const note = text.trim();
   if (!note) throw new Error("Empty capture");
-  if (settings.captureTarget === "daily" && !commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
+  if (settings.captureTarget === "daily") requireDailyNotes(app);
   const path = settings.captureTarget === "daily" ? await todayPath(app) : inboxPath(app, settings);
   await appendLine(app, path, captureLine(note, settings.captureFormat), settings.captureTarget === "daily");
   return path;
@@ -98,7 +107,7 @@ export async function dailyMatcher(app: App): Promise<(path: string) => boolean>
 
 /** Appends one Markdown line to today's daily note, creating it from the daily template when needed. */
 export async function appendToDaily(app: App, line: string): Promise<string> {
-  if (!commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
+  requireDailyNotes(app);
   const path = await todayPath(app);
   await appendLine(app, path, line, true);
   return path;
@@ -121,7 +130,7 @@ async function appendLine(app: App, path: string, line: string, daily: boolean):
 
 /** Today's daily note, created from the daily template when missing. Never overwrites an existing note. */
 export async function ensureTodayNote(app: App): Promise<TFile> {
-  if (!commandExists(app, "daily-notes")) throw new Error(t("capture.noDaily"));
+  requireDailyNotes(app);
   const path = await todayPath(app);
   await ensureParent(app, path);
   let file = app.vault.getAbstractFileByPath(path);

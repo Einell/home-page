@@ -46,8 +46,11 @@ export async function readFocus(plugin: QiaomuHomePlugin): Promise<FocusState> {
 export async function writeFocus(plugin: QiaomuHomePlugin, items: FocusItem[]): Promise<void> {
   const clean = items.filter(item => item.text.trim()).slice(0, MAX_FOCUS);
   if (!dailyEnabled(plugin.app)) {
-    plugin.settings.dailyFocus = { day: localDay(), items: clean };
-    await plugin.saveSettings({ rerender: false });
+    const previous = plugin.settings.dailyFocus;
+    const next = { day: localDay(), items: clean };
+    plugin.settings.dailyFocus = next;
+    try { await plugin.saveSettings({ rerender: false }); }
+    catch (error) { if (plugin.settings.dailyFocus === next) plugin.settings.dailyFocus = previous; throw error; }
     return;
   }
   const file = await ensureTodayNote(plugin.app);

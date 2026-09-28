@@ -1,3 +1,4 @@
+import { isComposingKey } from "./input-ui";
 import type { Setting } from "obsidian";
 import { isChinese } from "./i18n";
 
@@ -42,7 +43,7 @@ export function autoSave(root: HTMLElement, setting: Setting, field: HTMLInputEl
   field.addEventListener("blur", flush);
   field.addEventListener("change", flush);
   field.addEventListener("keydown", event => {
-    const submit = event instanceof KeyboardEvent && event.key === "Enter" && !event.isComposing && (field instanceof HTMLInputElement || event.metaKey || event.ctrlKey);
+    const submit = event instanceof KeyboardEvent && event.key === "Enter" && !isComposingKey(event) && (field instanceof HTMLInputElement || event.metaKey || event.ctrlKey);
     if (submit) { event.preventDefault(); flush(); }
   });
   if (!pending.has(root)) pending.set(root, new Set());

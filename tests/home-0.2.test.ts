@@ -69,3 +69,12 @@ it("creates missing daily folders and a templated diary once, then opens without
   expect(contents.get("Diary/2026/2026-09-26.md")).toBe("User work");
   expect(new Set(opened).size).toBe(1);
 });
+
+it("opens Core plugins before rejecting a disabled daily capture and never writes elsewhere", async () => {
+  const calls: string[] = [];
+  const app = { commands: { commands: {} }, setting: {
+    open: () => calls.push("open"), openTabById: (id: string) => calls.push(id),
+  } } as unknown as App;
+  await expect(captureNote(app, normalizeSettings({ captureTarget: "daily" }), "keep draft")).rejects.toThrow();
+  expect(calls).toEqual(["open", "plugins"]);
+});

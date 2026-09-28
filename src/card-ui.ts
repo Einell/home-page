@@ -1,4 +1,5 @@
 import { Notice, setIcon } from "obsidian";
+import { isComposingKey } from "./input-ui";
 
 /** A quiet text action with an optional leading icon; `primary` gives it a filled look for the card's main action. */
 export function cardAction(parent: HTMLElement, text: string, run: () => void, icon?: string, primary = false): HTMLButtonElement {
@@ -15,14 +16,13 @@ export function fieldRow(parent: HTMLElement, options: { placeholder: string; la
   const row = parent.createDiv({ cls: "qh-field-row" });
   const input = row.createEl("input", { cls: "qh-discovery-input", type: options.type ?? "text", placeholder: options.placeholder });
   input.id = `qh-field-${crypto.randomUUID()}`;
-  input.setAttr("aria-label", options.label);
+  row.createEl("label", { cls: "qh-sr-only", text: options.label, attr: { for: input.id } });
   const submit = row.createEl("button", { cls: "qh-field-submit" });
   setIcon(submit, options.icon);
-  submit.setAttr("aria-label", options.action);
-  submit.setAttr("title", options.action);
+  submit.createSpan({ cls: "qh-sr-only", text: options.action });
   submit.addEventListener("click", () => options.onSubmit());
   input.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.isComposing && !submit.disabled) { event.preventDefault(); options.onSubmit(); }
+    if (event.key === "Enter" && !isComposingKey(event) && !submit.disabled) { event.preventDefault(); options.onSubmit(); }
   });
   return { input, submit, row };
 }
