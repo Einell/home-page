@@ -173,16 +173,28 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
     const existing = paths.filter(path => app.vault.getAbstractFileByPath(path) instanceof TFile);
     if (!paths.length) message(L("保存当前打开的笔记，或逐篇添加，最多 20 篇", "Save the notes you have open, or add them one by one (up to 20)"));
     const shown = 8;
-    for (const path of paths.slice(0, shown)) {
+    const rows: HTMLElement[] = [];
+    for (const [index, path] of paths.entries()) {
       const file = app.vault.getAbstractFileByPath(path);
       const row = body.createDiv({ cls: "qh-working-row" });
+      row.hidden = index >= shown;
+      rows.push(row);
       if (file instanceof TFile) row.appendChild(note(file, file.basename, file.parent && !file.parent.isRoot() ? file.parent.path : ""));
       else row.createDiv({ cls: "qh-card-empty", text: L(`找不到：${path}`, `Missing: ${path}`) });
       const remove = row.createEl("button", { cls: "qh-icon-button" });
       setIcon(remove, "x"); remove.createSpan({ cls: "qh-sr-only", text: L("从笔记组移除", "Remove from set") });
       remove.addEventListener("click", () => store(paths.filter(entry => entry !== path)));
     }
-    if (paths.length > shown) body.createDiv({ cls: "qh-native-scope", text: L(`还有 ${paths.length - shown} 篇`, `${paths.length - shown} more`) });
+    if (paths.length > shown) {
+      let expanded = false;
+      const toggle = body.createEl("button", { cls: "qh-working-toggle", text: L(`展开其余 ${paths.length - shown} 篇`, `Show ${paths.length - shown} more`), attr: { "aria-expanded": "false" } });
+      toggle.addEventListener("click", () => {
+        expanded = !expanded;
+        rows.forEach((row, index) => { row.hidden = !expanded && index >= shown; });
+        toggle.setAttr("aria-expanded", String(expanded));
+        toggle.setText(expanded ? L("收起", "Show less") : L(`展开其余 ${paths.length - shown} 篇`, `Show ${paths.length - shown} more`));
+      });
+    }
     const actions = body.createDiv({ cls: "qh-workflow-actions" });
     if (existing.length) button(actions, L(`打开这 ${existing.length} 篇`, `Open ${existing.length} notes`), () => {
       const opened = new Set(openNotePaths(plugin));

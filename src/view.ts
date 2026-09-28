@@ -686,6 +686,7 @@ export class HomeView extends ItemView {
       const menu = new Menu();
       if (id.startsWith("shortcut:")) {
         const groupId = id.slice("shortcut:".length);
+        menu.addItem((item) => item.setTitle(isChinese() ? "管理入口" : "Manage shortcuts").setIcon("list-filter").onClick(() => this.editLayout(pageId)));
         menu.addItem((item) => item.setTitle(t("shortcut.renameGroup")).setIcon("pencil").onClick(() => editShortcutGroup(this.plugin, pageId, groupId)));
         menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(this.plugin, pageId, groupId).open()));
         menu.addSeparator();
@@ -1011,12 +1012,24 @@ export class HomeView extends ItemView {
     };
     bindOpen(row, open);
     row.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); open(event); } });
-    if (extra.menu) row.addEventListener("contextmenu", (event) => {
-      event.preventDefault();
-      const menu = new Menu();
-      extra.menu!(menu);
-      menu.showAtMouseEvent(event);
-    });
+    if (extra.menu) {
+      const showMenu = (event: MouseEvent, anchor?: HTMLElement) => {
+        event.preventDefault(); event.stopPropagation();
+        const menu = new Menu();
+        extra.menu!(menu);
+        if (anchor) {
+          const rect = anchor.getBoundingClientRect();
+          menu.showAtPosition({ x: rect.left, y: rect.bottom });
+        } else menu.showAtMouseEvent(event);
+      };
+      row.addEventListener("contextmenu", event => showMenu(event));
+      const more = row.createEl("button", { cls: "qh-icon-button qh-item-menu" });
+      setIcon(more, "ellipsis");
+      hiddenLabel(more, isChinese() ? `笔记选项：${item.title}` : `Note options: ${item.title}`);
+      more.setAttr("aria-haspopup", "menu");
+      more.addEventListener("click", event => showMenu(event, more));
+      more.addEventListener("keydown", event => event.stopPropagation());
+    }
     return row;
   }
 

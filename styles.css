@@ -834,6 +834,12 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-shortcut-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qh-shortcut-status { font-size: 11px; opacity: .65; }
 .qh-shortcut-more { position: absolute; top: 2px; right: 2px; }
+.qh-shortcut-more:focus-visible, .qh-item-menu:focus-visible { outline: 1px solid var(--qh-focus); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .qh-shortcut-more { opacity: 0; }
+  .qh-shortcut-cell:hover .qh-shortcut-more, .qh-shortcut-cell:focus-within .qh-shortcut-more, .qh-editing .qh-shortcut-more { opacity: 1; }
+}
+.qh-working-row[hidden] { display: none; }
 .qh-editing .qh-shortcut-link { padding-top: 30px; cursor: grab; }
 .qh-shortcut-icons { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin: 10px 0 18px; }
 .qh-icon-choice { display: flex; justify-content: center; align-items: center; min-height: 38px; box-shadow: none; }

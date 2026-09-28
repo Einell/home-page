@@ -307,9 +307,11 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
       const rect = anchor.getBoundingClientRect(); menu.showAtPosition({ x: rect.left, y: rect.bottom });
     };
     button.addEventListener("contextmenu", (event) => menu(event, button));
+    const more = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-more" });
+    setIcon(more, "ellipsis"); label(more, L(`入口选项：${shortcutName(item, plugin)}`, `Shortcut options: ${shortcutName(item, plugin)}`));
+    more.setAttr("aria-haspopup", "menu");
+    more.addEventListener("click", (event) => menu(event, more));
     if (editing) {
-      const more = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-more" }); setIcon(more, "ellipsis"); label(more, L("入口选项", "Shortcut options"));
-      more.addEventListener("click", (event) => menu(event, more));
       const handle = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-grip" });
       setIcon(handle, "grip-vertical"); label(handle, t("layout.drag"));
       handle.addEventListener("click", (event) => menu(event, handle));
