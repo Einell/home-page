@@ -3,11 +3,10 @@ import { openFromHome } from "./open";
 import { moment, normalizePath, Notice, Setting, TFile, setIcon, type App } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { cardAction } from "./card-ui";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 import { moduleOptions } from "./settings";
 import { dailyOptions, ensureTodayNote, todayPath } from "./today";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 export const MAX_HABITS = 8;
 const RESERVED = new Set(["__proto__", "constructor", "prototype", "tags", "aliases", "cssclasses", "position"]);
 
@@ -37,12 +36,12 @@ export function habitProblem(name: string, existing: string[]): string | null {
   if (/[,，:：#[\]{}|>]/.test(value) || value.length > 30) return L("名称不能包含逗号、冒号或 # 等符号，且不超过 30 字", "Avoid commas, colons or #, and keep it under 30 characters");
   if (RESERVED.has(value)) return L("这个名称被 Obsidian 保留", "That name is reserved by Obsidian");
   if (existing.includes(value)) return L("已经有这个习惯了", "You already track this habit");
-  if (existing.length >= MAX_HABITS) return L(`最多 ${MAX_HABITS} 个习惯`, `Up to ${MAX_HABITS} habits`);
+  if (existing.length >= MAX_HABITS) return L("最多 {MAX_HABITS} 个习惯", "Up to {MAX_HABITS} habits", { MAX_HABITS });
   return null;
 }
 
 export function suggestedHabits(): string[] {
-  return isChinese() ? ["运动", "阅读", "冥想", "早睡", "喝水", "写作"] : ["Exercise", "Read", "Meditate", "Sleep early", "Water", "Write"];
+  return [L("运动", "Exercise"), L("阅读", "Read"), L("冥想", "Meditate"), L("早睡", "Sleep early"), L("喝水", "Water"), L("写作", "Write")];
 }
 
 /** Consecutive days ending yesterday (plus today when done) where the property is true in that day's daily note. */
@@ -119,9 +118,9 @@ export function renderHabitCard(body: HTMLElement, card: HTMLElement, plugin: Qi
     const paintSummary = () => {
       summary.empty();
       const done = specs.filter(doneToday).length;
-      summary.createSpan({ text: done === specs.length ? L("今天全部完成 🎉", "All done today 🎉") : L(`完成 ${done} / ${specs.length}`, `${done} of ${specs.length} done`) });
+      summary.createSpan({ text: done === specs.length ? L("今天全部完成 🎉", "All done today 🎉") : L("完成 {done} / {length}", "{done} of {length} done", { done, length: specs.length }) });
       const bar = summary.createEl("progress", { cls: "qh-goal-bar" }); bar.max = specs.length; bar.value = done;
-      bar.setAttr("aria-label", L(`已完成 ${done} 项`, `${done} done`));
+      bar.setAttr("aria-label", L("已完成 {done} 项", "{done} done", { done }));
     };
     // Last seven days, oldest first; today reflects taps made on the card.
     const paintWeek = () => {
@@ -137,7 +136,7 @@ export function renderHabitCard(body: HTMLElement, card: HTMLElement, plugin: Qi
           if (done) count++;
           dots.createSpan({ cls: `qh-habit-dot${done ? " is-done" : ""}${offset === 0 ? " is-today" : ""}` });
         }
-        row.createSpan({ cls: "qh-sr-only", text: L(`${spec.name}：最近 7 天完成 ${count} 天`, `${spec.name}: ${count} of the last 7 days`) });
+        row.createSpan({ cls: "qh-sr-only", text: L("{name}：最近 7 天完成 {count} 天", "{name}: {count} of the last 7 days", { name: spec.name, count }) });
       }
     };
     const write = async (name: string, value: number | boolean) => {
@@ -166,8 +165,8 @@ export function renderHabitCard(body: HTMLElement, card: HTMLElement, plugin: Qi
         pill.toggleClass("is-done", on);
         icon.empty(); setIcon(icon, on ? "circle-check" : target > 1 && count > 0 ? "circle-dot" : "circle");
         const streak = habitStreak(offset => habitDone(history(offset)?.[name], target), on);
-        streakEl.setText(streak >= 2 ? L(`${streak} 天`, `${streak}d`) : "");
-        pill.setAttr("aria-label", `${name}${target > 1 ? ` ${count}/${target}` : ""}${streak >= 2 ? L(`，连续 ${streak} 天`, `, ${streak}-day streak`) : ""}`);
+        streakEl.setText(streak >= 2 ? L("{streak} 天", "{streak}d", { streak }) : "");
+        pill.setAttr("aria-label", `${name}${target > 1 ? ` ${count}/${target}` : ""}${streak >= 2 ? L("，连续 {streak} 天", ", {streak}-day streak", { streak }) : ""}`);
       };
       paint();
       if (!valid) {
@@ -209,12 +208,12 @@ export function renderHabitEditor(contentEl: HTMLElement, plugin: QiaomuHomePlug
   const paint = () => {
     root.empty();
     const names = current();
-    new Setting(root).setHeading().setName(L(`我的习惯（${names.length}/${MAX_HABITS}）`, `My habits (${names.length}/${MAX_HABITS})`));
+    new Setting(root).setHeading().setName(L("我的习惯（{length}/{MAX_HABITS}）", "My habits ({length}/{MAX_HABITS})", { length: names.length, MAX_HABITS }));
     if (!names.length) root.createDiv({ cls: "setting-item-description", text: L("还没有习惯，从下面添加一个。", "No habits yet; add one below.") });
     const targets = new Map(habitSpecs(moduleOptions(plugin.settings, "habit-checkin", pageId).query).map(spec => [spec.name, spec.target]));
     names.forEach((name, index) => {
       const row = new Setting(root).setName(name);
-      row.addDropdown(dropdown => dropdown.addOptions(Object.fromEntries([1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [String(n), n === 1 ? L("打卡", "Check off") : L(`每天 ${n} 次`, `${n} times a day`)])))
+      row.addDropdown(dropdown => dropdown.addOptions(Object.fromEntries([1, 2, 3, 4, 5, 6, 8, 10, 12].map(n => [String(n), n === 1 ? L("打卡", "Check off") : L("每天 {n} 次", "{n} times a day", { n })])))
         .setValue(String(targets.get(name) ?? 1)).onChange(value => void save(names.map(entry => entry === name ? `${name}:${value}` : entry))));
       row.addExtraButton(button => button.setIcon("arrow-up").setTooltip(L("上移", "Move up")).setDisabled(index === 0).onClick(() => {
         const next = [...names]; [next[index - 1], next[index]] = [next[index], next[index - 1]]; void save(next);

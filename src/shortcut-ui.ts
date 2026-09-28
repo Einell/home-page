@@ -2,7 +2,7 @@ import { openTodayNote } from "./today";
 import { DragFeedback, dropAfter } from "./drag-feedback";
 import { FuzzySuggestModal, Menu, Modal, Notice, Setting, TFile, TFolder, setIcon, type TAbstractFile } from "obsidian";
 import type QiaomuHomePlugin from "./main";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 import { NewPageModal } from "./page-dialogs";
 import { defaultShortcutIcon, FAVICON, linkTarget, moveShortcutGroup, reorderShortcut, SHORTCUT_ICONS, shortcutModuleId, type Shortcut, type ShortcutGroup, type ShortcutKind } from "./shortcuts";
 import { getIconIds } from "obsidian";
@@ -34,7 +34,6 @@ export function paintShortcutIcon(el: HTMLElement, item: Pick<Shortcut, "icon" |
   img.addEventListener("error", () => { el.empty(); setIcon(el, "globe"); }, { once: true });
 }
 
-const L = (zh: string, en: string): string => isChinese() ? zh : en;
 const groupName = (group: ShortcutGroup): string => group.name || L("常用入口", "Shortcuts");
 function label(button: HTMLElement, text: string): void { button.createSpan({ cls: "qh-sr-only", text }); }
 function findGroup(plugin: QiaomuHomePlugin, pageId: string, groupId: string): ShortcutGroup | undefined {
@@ -98,7 +97,7 @@ export class ShortcutEditorModal extends Modal {
       choices.forEach((value) => {
         const button = icons.createEl("button", { cls: "qh-icon-choice", attr: { "aria-pressed": String(icon === value) } });
         if (value === FAVICON) { paintShortcutIcon(button, { icon: FAVICON, kind: "url", target: linkTarget(target) ?? "https://example.com" }); label(button, L("网站图标", "Site icon")); }
-        else { setIcon(button, value); label(button, isChinese() ? iconNames[SHORTCUT_ICONS.indexOf(value)] : value); }
+        else { setIcon(button, value); label(button, L(iconNames[SHORTCUT_ICONS.indexOf(value)], value)); }
         button.addEventListener("click", () => {
           icon = value;
           icons.querySelectorAll("button").forEach((entry, at) => entry.setAttr("aria-pressed", String(choices[at] === icon)));
@@ -308,7 +307,7 @@ export function renderShortcutGroup(parent: HTMLElement, plugin: QiaomuHomePlugi
     };
     button.addEventListener("contextmenu", (event) => menu(event, button));
     const more = cell.createEl("button", { cls: "qh-icon-button qh-shortcut-more" });
-    setIcon(more, "ellipsis"); label(more, L(`入口选项：${shortcutName(item, plugin)}`, `Shortcut options: ${shortcutName(item, plugin)}`));
+    setIcon(more, "ellipsis"); label(more, L("入口选项：{v}", "Shortcut options: {v}", { v: shortcutName(item, plugin) }));
     more.setAttr("aria-haspopup", "menu");
     more.addEventListener("click", (event) => menu(event, more));
     if (editing) {

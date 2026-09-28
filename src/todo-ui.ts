@@ -7,10 +7,9 @@ import { commandExists } from "./ecosystem";
 import { editorFor, update } from "./todo-files";
 import { Modal, Notice, Setting, SuggestModal, TFile, setIcon } from 'obsidian';
 import type QiaomuHomePlugin from './main';
-import { isChinese } from './i18n';
+import { L } from './i18n';
 import { appendTodo, completeTodo, readTodos, locateTodo } from './todo-data';
 const drafts = new WeakMap<QiaomuHomePlugin, Map<string, string>>();
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 
 /** Adds a task (or a task block with indented children) where the Todo card writes: under today's heading or at the end of the task note. */
 export async function addTodoBlock(plugin: QiaomuHomePlugin, block: string): Promise<TFile> {
@@ -25,7 +24,7 @@ export async function addTodoBlock(plugin: QiaomuHomePlugin, block: string): Pro
 export async function completeWithUndo(plugin: QiaomuHomePlugin, file: TFile, item: { line: number; raw: string; text: string }, write: (current: string) => { text: string; done: string }): Promise<void> {
   let done = '';
   await update(plugin.app, file, current => { const result = write(current); done = result.done; return result.text; });
-  undoNotice(L(`已完成：${taskDisplay(item.text)}`, `Done: ${taskDisplay(item.text)}`),
+  undoNotice(L("已完成：{v}", "Done: {v}", { v: taskDisplay(item.text) }),
     () => update(plugin.app, file, current => reopenTodo(current, done, item.raw)),
     { undo: L('撤销', 'Undo'), failed: L('无法撤销：任务行已被修改', 'Could not undo: the task line changed') });
 }
@@ -40,21 +39,21 @@ class TodoPicker extends SuggestModal<TFile> {
   }
 }
 export function renderTodoPreferences(container: HTMLElement, plugin: QiaomuHomePlugin, changed:()=>void = ()=>{}): void {
-  const save=()=>{void plugin.saveSettings().then(changed).catch(()=>new Notice(L('保存失败','Save failed')));};
-  new Setting(container).setName(L('写入位置','Destination')).addDropdown(dropdown=>dropdown.addOptions({daily:L('今日日记','Daily note'),fixed:L('固定笔记','Fixed note')}).setValue(plugin.settings.todoDaily?'daily':'fixed').onChange(value=>{plugin.settings.todoDaily=value==='daily';save();}));
+  const save=()=>{void plugin.saveSettings().then(changed).catch(()=>new Notice(L('保存失败', 'Save failed')));};
+  new Setting(container).setName(L('写入位置', 'Destination')).addDropdown(dropdown=>dropdown.addOptions({daily:L('今日日记', 'Daily note'),fixed:L('固定笔记', 'Fixed note')}).setValue(plugin.settings.todoDaily?'daily':'fixed').onChange(value=>{plugin.settings.todoDaily=value==='daily';save();}));
   if(plugin.settings.todoDaily) {
     const available=commandExists(plugin.app,'daily-notes');
-    if(!available)container.createDiv({cls:'setting-item-description',text:L('未启用日记，暂存到固定任务笔记。','Daily notes is disabled; using the fixed note.')});
-    new Setting(container).setName(L('查找未完成任务的范围','Look back for unfinished tasks')).setDesc(L('只检查最近几天的日记，旧任务不会被一次性搬进今天。','Only recent daily notes are checked, so old tasks never flood today.')).addDropdown(dropdown=>dropdown.addOptions(Object.fromEntries([1,3,7,14,30].map(days=>[String(days),L(`最近 ${days} 天`,`Last ${days} day${days>1?'s':''}`)]))).setValue(String(plugin.settings.todoCarryDays)).onChange(value=>{plugin.settings.todoCarryDays=Number(value);save();}));
-    new Setting(container).setName(L('自动结转未完成任务','Automatically carry unfinished tasks')).setDesc(L('打开主页时移入今天，原笔记留下日期链接。','Move pending tasks into today when Home opens, leaving dated links.')).addToggle(toggle=>toggle.setValue(plugin.settings.todoAutoCarry).setDisabled(!available).onChange(value=>{plugin.settings.todoAutoCarry=value;save();}));
+    if(!available)container.createDiv({cls:'setting-item-description',text:L('未启用日记，暂存到固定任务笔记。', 'Daily notes is disabled; using the fixed note.')});
+    new Setting(container).setName(L('查找未完成任务的范围', 'Look back for unfinished tasks')).setDesc(L('只检查最近几天的日记，旧任务不会被一次性搬进今天。', 'Only recent daily notes are checked, so old tasks never flood today.')).addDropdown(dropdown=>dropdown.addOptions(Object.fromEntries([1,3,7,14,30].map(days=>[String(days),L("最近 {days} 天", days > 1 ? "Last {days} days" : "Last day", { days })]))).setValue(String(plugin.settings.todoCarryDays)).onChange(value=>{plugin.settings.todoCarryDays=Number(value);save();}));
+    new Setting(container).setName(L('自动结转未完成任务', 'Automatically carry unfinished tasks')).setDesc(L('打开主页时移入今天，原笔记留下日期链接。', 'Move pending tasks into today when Home opens, leaving dated links.')).addToggle(toggle=>toggle.setValue(plugin.settings.todoAutoCarry).setDisabled(!available).onChange(value=>{plugin.settings.todoAutoCarry=value;save();}));
   }
   const fallback=container.createEl('details',{cls:'qh-settings-details'});fallback.open=!plugin.settings.todoDaily;
-  fallback.createEl('summary',{text:plugin.settings.todoDaily?L('备用任务笔记','Fallback task note'):L('任务笔记','Task note')});
-  new Setting(fallback).setName(plugin.settings.todoPath).setDesc(L('未完成项保留在原笔记中；切换不会自动搬移。','Existing tasks stay in their source; switching does not move them.')).addButton(button=>button.setButtonText(L('选择','Choose')).onClick(()=>new TodoPicker(plugin,changed,false).open()));
+  fallback.createEl('summary',{text:plugin.settings.todoDaily?L('备用任务笔记', 'Fallback task note'):L('任务笔记', 'Task note')});
+  new Setting(fallback).setName(plugin.settings.todoPath).setDesc(L('未完成项保留在原笔记中；切换不会自动搬移。', 'Existing tasks stay in their source; switching does not move them.')).addButton(button=>button.setButtonText(L('选择', 'Choose')).onClick(()=>new TodoPicker(plugin,changed,false).open()));
 }
 class TodoOptions extends Modal {
   constructor(private plugin: QiaomuHomePlugin) { super(plugin.app); this.modalEl.addClass("qh-ui"); }
-  onOpen(): void {this.setTitle(L('待办设置','Todo settings'));this.contentEl.empty();renderTodoPreferences(this.contentEl,this.plugin,()=>this.onOpen());}
+  onOpen(): void {this.setTitle(L('待办设置', 'Todo settings'));this.contentEl.empty();renderTodoPreferences(this.contentEl,this.plugin,()=>this.onOpen());}
   onClose(): void {this.contentEl.empty();}
 }
 class CarryPicker extends Modal {
@@ -66,7 +65,7 @@ class CarryPicker extends Modal {
       this.contentEl.createEl('h3',{text:group.file.basename});
       group.tasks.forEach((task,j)=>{ new Setting(this.contentEl).setName(task.text).addToggle(toggle=>toggle.onChange(value=>{const id=`${i}:${j}`;if(value)selected.add(id);else selected.delete(id);})); });
     });
-    new Setting(this.contentEl).addButton(button=>button.setButtonText(L('移入今天','Move to today')).setCta().onClick(async()=>{
+    new Setting(this.contentEl).addButton(button=>button.setButtonText(L('移入今天', 'Move to today')).setCta().onClick(async()=>{
       const groups=this.groups.map((group,i)=>({...group,tasks:group.tasks.filter((_,j)=>selected.has(`${i}:${j}`))})).filter(group=>group.tasks.length);
       if(!groups.length)return;
       button.setDisabled(true);
@@ -84,7 +83,7 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   const head = card.createDiv({ cls: 'qh-card-head' });
   setIcon(head.createSpan({ cls: 'qh-card-icon' }), 'list-todo');
   head.createSpan({ cls: 'qh-card-title', text: L('今日待办', 'Today’s tasks') });
-  const options=head.createEl('button',{cls:'qh-icon-button'});setIcon(options,'sliders-horizontal');options.createSpan({cls:'qh-sr-only',text:L('待办设置','Todo settings')});options.addEventListener('click',()=>new TodoOptions(plugin).open());
+  const options=head.createEl('button',{cls:'qh-icon-button'});setIcon(options,'sliders-horizontal');options.createSpan({cls:'qh-sr-only',text:L('待办设置', 'Todo settings')});options.addEventListener('click',()=>new TodoOptions(plugin).open());
   const form = card.createEl('form', { cls: 'qh-todo-form' });
   guardFormComposition(form);
   const label = form.createEl('label', { cls: 'qh-sr-only', text: L('添加待办', 'Add task') });
@@ -108,8 +107,8 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
     carry.querySelectorAll<HTMLButtonElement>('button').forEach(b=>b.disabled=true);
     try { await carrySelected(plugin,path,groups); }
     catch(e) {
-      error.setText(L('结转未全部完成，任务已保留。请等待笔记保存后点击重试；若笔记已改动，请先核对来源和今日笔记。','Transfer incomplete; tasks retained. Wait for notes to save and retry. If edited, check source and today first.'));
-      const retry=error.createEl('button',{text:L('重试','Retry')});
+      error.setText(L('结转未全部完成，任务已保留。请等待笔记保存后点击重试；若笔记已改动，请先核对来源和今日笔记。', 'Transfer incomplete; tasks retained. Wait for notes to save and retry. If edited, check source and today first.'));
+      const retry=error.createEl('button',{text:L('重试', 'Retry')});
       retry.addEventListener('click',()=>{void move([]).catch(()=>{});});
       throw e;
     } finally {moving=false;await refresh();}
@@ -148,13 +147,13 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
       carry.empty();
       const count=groups.reduce((sum,g)=>sum+g.tasks.length,0);
       if(count) {
-        carry.createSpan({text:L(`有 ${count} 条未完成`,`${count} pending from earlier notes`)});
-        const all=carry.createEl('button',{text:L('全部移入今天','Move all to today')});all.addEventListener('click',()=>{void move(groups).catch(()=>{});});
-        const choose=carry.createEl('button',{text:L('选择结转','Choose tasks')});choose.addEventListener('click',()=>new CarryPicker(app,groups,move).open());
+        carry.createSpan({text:L("有 {count} 条未完成", "{count} pending from earlier notes", { count })});
+        const all=carry.createEl('button',{text:L('全部移入今天', 'Move all to today')});all.addEventListener('click',()=>{void move(groups).catch(()=>{});});
+        const choose=carry.createEl('button',{text:L('选择结转', 'Choose tasks')});choose.addEventListener('click',()=>new CarryPicker(app,groups,move).open());
         if(card.isConnected&&plugin.settings.todoAutoCarry&&!autoTried){autoTried=true;void move(groups).catch(()=>{});}
       }
     }
-    if (tasks.length > limit) more.setText(L(`查看全部 ${tasks.length} 条`, `View all ${tasks.length} tasks`));
+    if (tasks.length > limit) more.setText(L("查看全部 {length} 条", "View all {length} tasks", { length: tasks.length }));
   };
   form.addEventListener('submit', event => {
     event.preventDefault(); if (busy || !input.value.trim()) return;

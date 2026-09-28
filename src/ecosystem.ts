@@ -1,5 +1,5 @@
 import type { App, Plugin } from "obsidian";
-import { isChinese } from "./i18n";
+import { L } from "./i18n";
 
 /** Qiaomu plugins Home knows about. Any other plugin that implements the protocol also appears, just without a recommendation card. */
 export interface KnownPlugin {
@@ -49,7 +49,7 @@ export const KNOWN_PLUGINS: KnownPlugin[] = [
 ];
 
 export function localized(text: { zh: string; en: string }): string {
-  return isChinese() ? text.zh : text.en;
+  return L(text.zh, text.en);
 }
 
 /** absent: not installed · disabled: installed but off · enabled: loaded (with or without the Home protocol). */

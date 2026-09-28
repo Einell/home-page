@@ -4,7 +4,7 @@ import { INTEGRATIONS } from "./integration-catalog";
 import { calendarUrl, clockMinutes, validZone, type WeatherLocation, type ZoneEntry } from "./extra-data";
 import { PRODUCTIVITY_MODULES } from "./productivity-catalog";
 import { normalizeFocus, type FocusSession } from "./productivity-data";
-import { isChinese } from "./i18n";
+import { L, isChinese, isLanguage, type LanguagePreference } from "./i18n";
 import { defaultHomeShortcuts, FAVICON, normalizeShortcutGroups, type ShortcutGroup } from "./shortcuts";
 export type WallpaperSource = "curated" | "unsplash" | "local" | "none";
 export type WallpaperRotation = "daily" | "open" | "fixed";
@@ -61,6 +61,8 @@ export interface HomePage {
 }
 
 export interface HomeSettings {
+  /** Interface language; "auto" follows Obsidian. */
+  language: LanguagePreference;
   openOnStartup: boolean;
   replaceNewTab: boolean;
   headline: Headline;
@@ -150,7 +152,7 @@ export const PAGE_TEMPLATES: Record<PageTemplate, { zh: string; en: string; icon
 export function presetPage(kind: PageTemplate): HomePage {
   const template = PAGE_TEMPLATES[kind];
   const modules = template.modules;
-  const page: HomePage = { id: kind, name: isChinese() ? template.zh : template.en, moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
+  const page: HomePage = { id: kind, name: L(template.zh, template.en), moduleOptions: Object.fromEntries(modules.map(id => [id, {visible:true, limit:3}])), moduleOrder:[...modules], shortcutGroups:[], defaultVisible:false, showRecommendations:false };
   if (kind === "home") {
     const group = defaultHomeShortcuts(isChinese());
     page.shortcutGroups.push(group);
@@ -159,13 +161,14 @@ export function presetPage(kind: PageTemplate): HomePage {
   }
   if(kind === "entertainment") {
     const id="entertainment-links";
-    page.shortcutGroups.push({id,name:isChinese()?"常用网站":"Favorite websites",items:[]});
+    page.shortcutGroups.push({id,name:L("常用网站", "Favorite websites"),items:[]});
     page.moduleOptions[`shortcut:${id}`]={visible:true,limit:3};page.moduleOrder.push(`shortcut:${id}`);
   }
   return page;
 }
 
 export const DEFAULT_SETTINGS: HomeSettings = {
+  language: "auto",
   openOnStartup: true,
   replaceNewTab: true,
   headline: "clock",
@@ -358,6 +361,7 @@ export function normalizeSettings(saved: unknown): HomeSettings {
     }
   }
   return {
+    language: isLanguage(raw.language) ? raw.language : "auto",
     openOnStartup: typeof raw.openOnStartup === "boolean" ? raw.openOnStartup : defaults.openOnStartup,
     replaceNewTab: typeof raw.replaceNewTab === "boolean" ? raw.replaceNewTab : defaults.replaceNewTab,
     headline: pick(raw.headline, ["clock", "custom"], defaults.headline),

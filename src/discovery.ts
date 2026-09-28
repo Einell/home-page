@@ -1,3 +1,4 @@
+import { L } from "./i18n";
 /** Approved public search destinations. Home only opens their search pages; it never scrapes or downloads content. */
 export interface DiscoverySite {
   id: string;
@@ -117,10 +118,10 @@ export function parseSearchTemplates(input: string): SearchTemplate[] {
   return input.split(/\r?\n/).filter(line => line.trim()).slice(0, 8).map((line, index) => {
     const separator = line.indexOf("|");
     const name = line.slice(0, separator).trim(), url = line.slice(separator + 1).trim();
-    if (separator < 1 || !name || !url.includes("{query}")) throw new Error(`第 ${index + 1} 行需要：名称 | https://example.com/?q={query}`);
+    if (separator < 1 || !name || !url.includes("{query}")) throw new Error(L("第 {line} 行需要：名称 | https://example.com/?q={query}", "Line {line} needs: Name | https://example.com/?q={query}", { line: index + 1 }));
     const parsed = new URL(url.replaceAll("{query}", "test"));
-    if (parsed.origin !== new URL(url.replaceAll("{query}", "other")).origin) throw new Error(`第 ${index + 1} 行的 {query} 只能放在路径或查询参数中`);
-    if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error(`第 ${index + 1} 行的网址无效`);
+    if (parsed.origin !== new URL(url.replaceAll("{query}", "other")).origin) throw new Error(L("第 {line} 行的 {query} 只能放在路径或查询参数中", "Line {line}: {query} can only appear in the path or query string", { line: index + 1 }));
+    if (!["https:", "http:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error(L("第 {line} 行的网址无效", "Line {line}: invalid URL", { line: index + 1 }));
     return { name: name.slice(0, 60), url };
   });
 }

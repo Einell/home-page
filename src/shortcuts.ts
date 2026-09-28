@@ -1,3 +1,4 @@
+import { L } from "./i18n";
 import type { HomeSettings } from "./settings";
 
 export type ShortcutKind = "file" | "folder" | "url" | "daily" | "command";
@@ -72,9 +73,9 @@ export function moveShortcutGroup(settings: HomeSettings, from: string, to: stri
 }
 
 export function defaultHomeShortcuts(chinese: boolean): ShortcutGroup {
-  return { id: "home-shortcuts", name: chinese ? "常用入口" : "Shortcuts", items: [
-    {id:"daily", kind:"daily", target:"today", name:chinese?"今日日记":"Daily note", icon:"calendar"},
+  return { id: "home-shortcuts", name: L("常用入口", "Shortcuts"), items: [
+    {id:"daily", kind:"daily", target:"today", name:L("今日日记", "Daily note"), icon:"calendar"},
     {id:"x", kind:"url", target:"https://x.com/", name:"X", icon:FAVICON},
-    {id:"google", kind:"url", target:"https://www.google.com/", name:chinese?"谷歌":"Google", icon:FAVICON},
+    {id:"google", kind:"url", target:"https://www.google.com/", name:L("谷歌", "Google"), icon:FAVICON},
   ]};
 }

@@ -24,6 +24,8 @@ A calm start page for your notes, daily tasks, and everything you want to return
 
 无需注册。基础功能独立可用。笔记和待办留在自己的 Obsidian 库里。
 
+界面支持 9 种语言：简体中文、English、日本語、한국어、Français、Deutsch、Español、Português、Русский。默认跟随 Obsidian 的语言，也可以在「设置 → 外观 → 界面语言」单独切换。
+
 ## 三步，拥有自己的主页
 
 1. **[打开插件市场页面](https://community.obsidian.md/plugins/qiaomu-home)**，或在 Obsidian 的「设置 → 第三方插件 → 浏览」搜索 **Qiaomu Home**。
@@ -202,6 +204,7 @@ Requires **Obsidian 1.11.4 or newer**. For manual installation, download `main.j
 | Search and capture | Find local notes by name, alias, or path. `Shift+Enter` appends text to today’s daily note using your Daily notes folder, date format, and template. |
 | Appearance | Choose from 50 credited Unsplash wallpapers, use a local image, or configure Unsplash search. Show a clock and greeting or your own text. |
 | Starter plugins | Discover 20 useful community plugins through short explanations. Show three by default, expand for more, and open official details before installing. |
+| Nine languages | Simplified Chinese, English, Japanese, Korean, French, German, Spanish, Portuguese and Russian. Follows Obsidian by default; override it under **Settings → Appearance → Language**. Names you gave pages and shortcuts are never changed. |
 | Optional integrations | Continue books, RSS articles, radio, and conversations through Qiaomu Reader, RSS, Radio, and Agent. Home also works on its own. |
 
 The screenshots above are actual desktop UI with sample content, a custom heading, and a configured layout. Website shortcuts use selectable icons rather than fetching favicons. The Todo module does not currently integrate with Tasks.

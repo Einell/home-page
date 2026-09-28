@@ -1,9 +1,8 @@
 import { Modal, Notice, Setting } from "obsidian";
 import type QiaomuHomePlugin from "./main";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 import { parseBookmarks, decodeBookmarkText } from "./quick-tools";
 import { shortcutModuleId, type ShortcutGroup } from "./shortcuts";
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 export class BookmarkImportModal extends Modal {
   constructor(private plugin: QiaomuHomePlugin, private pageId: string) { super(plugin.app); this.modalEl.addClass("qh-ui"); }
   onOpen(): void {
@@ -24,7 +23,7 @@ export class BookmarkImportModal extends Modal {
         void file.text().then(text => {
           if (!this.contentEl.isConnected || input.files?.[0] !== file) return;
           bookmarks = parseBookmarks(text, decodeBookmarkText);
-          preview.createEl("p", { text: L(`将导入 ${bookmarks.length} 个网址`, `${bookmarks.length} websites to import`) });
+          preview.createEl("p", { text: L("将导入 {length} 个网址", "{length} websites to import", { length: bookmarks.length }) });
           for (const item of bookmarks.slice(0, 8)) preview.createDiv({ text: `${item.name} · ${new URL(item.url).hostname}` });
           button.setDisabled(!bookmarks.length);
         }).catch(error => preview.setText(error instanceof Error ? error.message : L("读取失败", "Could not read bookmarks")));

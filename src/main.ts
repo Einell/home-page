@@ -2,9 +2,8 @@ import { HomeTaskIndex } from "./task-index";
 import { AmbientPlayer } from "./ambient";
 import { moment, Notice, Plugin, type WorkspaceLeaf } from "obsidian";
 import { appendToDaily } from "./today";
-import { isChinese } from "./i18n";
+import { L, setLanguage, t, type LanguagePreference } from "./i18n";
 import { renameShortcutTargets } from "./shortcuts";
-import { t } from "./i18n";
 import { DEFAULT_SETTINGS, normalizeSettings, type HomeSettings } from "./settings";
 import { HomeSettingTab } from "./settings-tab";
 import { HOME_VIEW_TYPE, HomeView } from "./view";
@@ -44,7 +43,10 @@ export default class QiaomuHomePlugin extends Plugin {
   private claiming = new WeakSet<WorkspaceLeaf>();
 
   async onload(): Promise<void> {
-    this.settings = normalizeSettings(await this.loadData());
+    const data: unknown = await this.loadData();
+    // The language decides default page and shortcut names, so it is set before settings are normalized.
+    setLanguage((data as { language?: LanguagePreference } | null)?.language ?? "auto");
+    this.settings = normalizeSettings(data);
     this.wallpaper = new WallpaperService(this);
     this.taskIndex = new HomeTaskIndex(this.app);
     this.register(() => this.taskIndex.clear());
@@ -108,13 +110,12 @@ export default class QiaomuHomePlugin extends Plugin {
     if (this.completingFocus || !session.endAt || Date.now() < session.endAt) return;
     this.completingFocus = true;
     const endAt = session.endAt, minutes = session.durationMinutes;
-    const chinese = isChinese();
     const recent = Date.now() - endAt < 10 * 60000;
     if (recent && this.settings.focusSound) playChime();
     if (session.kind === "break") {
       // A break is not counted; Home is ready for the next focus session of the chosen length.
       this.settings.focusSession = { ...session, kind: "focus", durationMinutes: session.focusMinutes, endAt: 0, remainingMs: session.focusMinutes * 60000 };
-      if (recent) new Notice(chinese ? "休息结束，开始下一段专注吧" : "Break over. Ready for the next session.");
+      if (recent) new Notice(L("休息结束，开始下一段专注吧", "Break over. Ready for the next session."));
       void this.saveSettings({ rerender: false }).finally(() => { this.completingFocus = false; });
       return;
     }
@@ -123,14 +124,14 @@ export default class QiaomuHomePlugin extends Plugin {
     const day = (moment as unknown as (time: number) => { format(pattern: string): string })(endAt).format("YYYY-MM-DD");
     const stats = this.settings.focusStats.day === day ? this.settings.focusStats : { day, count: 0, minutes: 0 };
     this.settings.focusStats = { day, count: stats.count + 1, minutes: stats.minutes + minutes };
-    if (recent) new Notice(chinese ? `专注 ${minutes} 分钟完成，休息一下吧` : `${minutes}-minute focus complete. Take a break.`);
+    if (recent) new Notice(L("专注 {minutes} 分钟完成，休息一下吧", "{minutes}-minute focus complete. Take a break.", { minutes }));
     void (async () => {
       await this.saveSettings({ rerender: false });
       if (!this.settings.focusLog) return;
       const format = (time: number) => (moment as unknown as (time: number) => { format(pattern: string): string })(time).format("HH:mm");
       const label = session.label || await currentFocusText(this);
-      await appendToDaily(this.app, `- ${format(endAt - minutes * 60000)}–${format(endAt)} ${chinese ? `专注 ${minutes} 分钟` : `Focused ${minutes} min`}${label ? ` · ${label}` : ""}`);
-    })().catch((error: unknown) => new Notice(chinese ? `专注记录未写入：${error instanceof Error ? error.message : String(error)}` : `Focus log not written: ${error instanceof Error ? error.message : String(error)}`))
+      await appendToDaily(this.app, `- ${format(endAt - minutes * 60000)}–${format(endAt)} ${L("专注 {minutes} 分钟", "Focused {minutes} min", { minutes })}${label ? ` · ${label}` : ""}`);
+    })().catch((error: unknown) => new Notice(L("专注记录未写入：{v}", "Focus log not written: {v}", { v: error instanceof Error ? error.message : String(error) })))
       .finally(() => { this.completingFocus = false; });
   }
 
@@ -145,6 +146,7 @@ export default class QiaomuHomePlugin extends Plugin {
     const save = this.saveQueue.catch(() => {}).then(() => this.saveData(snapshot));
     this.saveQueue = save;
     await save;
+    setLanguage(this.settings.language);
     if (options.rerender !== false) this.eachView((view) => view.render());
   }
 

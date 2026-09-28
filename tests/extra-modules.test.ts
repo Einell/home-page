@@ -1,3 +1,4 @@
+import { setLanguage } from "../src/i18n";
 import { describe, expect, it } from "vitest";
 import {
   activityDays, agenda, calendarUrl, dailyIndex, heatLevel, parseFlashcards, parseForecast, parseGeocoding, parseIcs, parseQuotes,
@@ -23,7 +24,9 @@ describe("time cards", () => {
   });
   it("validates time zones line by line and reports day offsets", () => {
     expect(parseZones("东京 | Asia/Tokyo\nEurope/Paris")).toEqual([{ label: "东京", zone: "Asia/Tokyo" }, { label: "Paris", zone: "Europe/Paris" }]);
+    setLanguage("en");
     expect(() => parseZones("Nowhere | Mars/Base")).toThrow(/Line 1/);
+    setLanguage("auto");
     const now = new Date(Date.UTC(2026, 8, 27, 23, 30));
     expect(zoneTime(now, "UTC").time).toBe("23:30");
     expect(zoneTime(now, "Pacific/Kiritimati").time).toBe("13:30");
@@ -60,7 +63,7 @@ describe("video notes", () => {
     expect(parseVideoUrl("https://www.bilibili.com/video/BV1xx411c7mD/?p=2")?.url).toBe("https://www.bilibili.com/video/BV1xx411c7mD/?p=2");
     expect(parseVideoUrl("https://example.com/watch?v=dQw4w9WgXcQ")).toBeNull();
     expect(parseVideoUrl("javascript:alert(1)")).toBeNull();
-    const note = videoNote(parseVideoUrl("https://youtu.be/dQw4w9WgXcQ")!, "2026-09-27", true);
+    const note = videoNote(parseVideoUrl("https://youtu.be/dQw4w9WgXcQ")!, "2026-09-27");
     expect(note).toContain("source: https://www.youtube.com/watch?v=dQw4w9WgXcQ");
     expect(note).toContain("## 高亮与时间戳");
   });
@@ -81,8 +84,8 @@ describe("activity heatmap", () => {
 
 describe("weather", () => {
   it("maps WMO codes and parses Open-Meteo responses strictly", () => {
-    expect(weatherLabel(0, true)).toEqual({ text: "晴", icon: "sun" });
-    expect(weatherLabel(95, false).icon).toBe("cloud-lightning");
+    expect(weatherLabel(0)).toEqual({ text: "晴", icon: "sun" });
+    expect(weatherLabel(95).icon).toBe("cloud-lightning");
     const forecast = parseForecast({ current: { temperature_2m: 21.4, apparent_temperature: 20, weather_code: 2 }, daily: { time: ["2026-09-27"], weather_code: [61], temperature_2m_max: [24], temperature_2m_min: [17], precipitation_probability_max: [80] } });
     expect(forecast.days[0]).toEqual({ day: "2026-09-27", code: 61, max: 24, min: 17, rain: 80 });
     expect(() => parseForecast({ current: {} })).toThrow();

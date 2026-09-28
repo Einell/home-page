@@ -1,8 +1,7 @@
 import { isComposingKey } from "./input-ui";
 import type { Setting } from "obsidian";
-import { isChinese } from "./i18n";
+import { L } from "./i18n";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 /** Placeholders that show literal syntax (moment formats, Dataview, Obsidian search) and must keep their casing. */
 export const SYNTAX_EXAMPLES = { weekly: "gggg-[W]ww", dataview: "LIST FROM #project", search: "tag:#work" } as const;
 
