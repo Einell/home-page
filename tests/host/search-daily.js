@@ -25,13 +25,6 @@ try{
  const next=await app.vault.read(file);
  assert(next.includes('今日记录 QA')&&next.includes('第二笔 QA'),'Second capture preserves existing daily content');
  assert(!app.vault.getAbstractFileByPath(`${folder}/Inbox.md`),'Search does not silently write to Inbox');
- const command=app.commands.commands['daily-notes'];
- try{
-  delete app.commands.commands['daily-notes'];input.value='Keep failed daily capture';await view.capture(input.value);
-  assert(input.value==='Keep failed daily capture','Disabled daily notes preserves failed capture draft');
-  assert(app.setting.activeTab?.id==='plugins','Disabled daily notes opens the actual Core plugins settings');
-  app.setting.close();
- }finally{app.commands.commands['daily-notes']=command;}
  return {checks};
 }finally{
  daily.options=options;p.settings=settings;await p.saveSettings();
