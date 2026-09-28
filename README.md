@@ -114,7 +114,7 @@ A calm start page for your notes, daily tasks, and everything you want to return
 | 想做的事 | 怎么做 |
 | --- | --- |
 | 找一篇笔记 | 输入名称、别名或路径，`Enter` 打开；可转到 Obsidian 全文搜索 |
-| 先记下一点想法 | 输入后按 `Shift + Enter`，追加到日记或 Inbox |
+| 先记下一点想法 | 输入后按 `Shift + Enter`，追加到今日日记（沿用日记目录、日期格式和模板） |
 | 开始写一篇新笔记 | 点击「新笔记」，或在搜索无结果时新建同名笔记 |
 | 创建白板、数据库或文件夹 | 打开「新笔记」旁的菜单 |
 | 问 AI | 安装乔木 Agent 后，搜索框 `⌘ / Ctrl + Enter` 提问 |
@@ -199,7 +199,7 @@ Requires **Obsidian 1.11.4 or newer**. For manual installation, download `main.j
 | Optional cards | 50+ opt-in cards in eight categories — today, tasks & focus, notes & review, vault upkeep, search & learning, utilities, shortcuts and integrations — including weekly review, flashcards, snippets, video notes, an .ics agenda, weather, world clock, time progress and ambient noise. Filter by category, show only cards not yet added, and add or remove in place. |
 | Daily tasks | Add and complete plain Markdown tasks in today's daily note, or a fixed note. Move unfinished tasks forward manually; automatic carry-forward is optional and off by default. |
 | Personal shortcuts | Open a note, folder, website, or today's daily note. Choose names and icons and reorder your entries. |
-| Search and capture | Find local notes by name, alias, or path. `Shift+Enter` captures text into an Inbox or daily note. |
+| Search and capture | Find local notes by name, alias, or path. `Shift+Enter` appends text to today’s daily note using your Daily notes folder, date format, and template. |
 | Appearance | Choose from 50 credited Unsplash wallpapers, use a local image, or configure Unsplash search. Show a clock and greeting or your own text. |
 | Starter plugins | Discover 20 useful community plugins through short explanations. Show three by default, expand for more, and open official details before installing. |
 | Optional integrations | Continue books, RSS articles, radio, and conversations through Qiaomu Reader, RSS, Radio, and Agent. Home also works on its own. |

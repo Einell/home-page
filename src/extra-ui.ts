@@ -1,3 +1,4 @@
+import { isComposingKey } from "./input-ui";
 import { openFromHome } from "./open";
 import { FuzzySuggestModal, moment, normalizePath, Notice, requestUrl, Setting, TFile, TFolder, setIcon, setTooltip } from "obsidian";
 import type QiaomuHomePlugin from "./main";
@@ -39,6 +40,8 @@ function fetchText(url: string, ttlMs: number): Promise<string> {
 /** Per-session UI state (which quote or card is showing) so re-renders do not reshuffle. */
 const offsets = new Map<string, number>();
 const revealed = new Set<string>();
+const captureDrafts = new WeakMap<QiaomuHomePlugin, string>();
+const capturePending = new WeakSet<QiaomuHomePlugin>();
 
 interface WeekPaths { path: string; template: string; label: string; range: string; daysLeft: number; periodic: boolean }
 export function weeklyNote(plugin: QiaomuHomePlugin, options: ModuleOptions): WeekPaths {
@@ -91,7 +94,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     return el;
   };
   const onEnter = (el: HTMLInputElement, action: () => void) => el.addEventListener("keydown", event => {
-    if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); action(); }
+    if (event.key === "Enter" && !isComposingKey(event)) { event.preventDefault(); action(); }
   });
 
   if (id === "quick-capture") {
@@ -101,21 +104,32 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     // A textarea so pasted or Shift+Enter lines are kept; Enter saves. Extra lines are indented under the first.
     const row = body.createDiv({ cls: "qh-field-row qh-capture-row" });
     const field = row.createEl("textarea", { cls: "qh-discovery-input qh-capture-input", attr: { rows: "1", placeholder: L("记下一句话…（⇧↵ 换行）", "Write a line… (⇧↵ for a new line)"), maxlength: "2000" } });
+    field.value = captureDrafts.get(plugin) ?? "";
     const fieldName = row.createSpan({ cls: "qh-sr-only", text: L("快速记录", "Quick capture") });
     fieldName.id = `qh-capture-${crypto.randomUUID()}`; field.setAttr("aria-labelledby", fieldName.id);
     const submit = row.createEl("button", { cls: "qh-field-submit" });
+    submit.disabled = capturePending.has(plugin);
     setIcon(submit, "corner-down-left"); submit.createSpan({ cls: "qh-sr-only", text: L("记下", "Save") });
     const grow = () => { field.setCssProps({ height: "auto" }); field.setCssProps({ height: `${Math.min(field.scrollHeight, 160)}px` }); };
     const save = () => {
+      if (capturePending.has(plugin)) return;
       if (!field.value.trim()) { field.focus(); return; }
+      const text = field.value;
+      capturePending.add(plugin);
       submit.disabled = true;
-      void captureNote(app, plugin.settings, field.value).then(path => {
-        field.value = ""; grow(); status.setText(L(`已记下 · ${path}`, `Saved · ${path}`)); field.focus();
+      void captureNote(app, plugin.settings, text).then(path => {
+        if (captureDrafts.get(plugin) === text) captureDrafts.delete(plugin);
+        if (field.value === text) field.value = "";
+        grow(); status.setText(L(`已记下 · ${path}`, `Saved · ${path}`));
+        if (field.ownerDocument.activeElement === submit) field.focus();
       }).catch((error: unknown) => new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) })))
-        .finally(() => { submit.disabled = false; });
+        .finally(() => {
+          capturePending.delete(plugin); submit.disabled = false;
+          if (!card.isConnected) plugin.eachView(view => view.requestRefresh());
+        });
     };
-    field.addEventListener("input", grow);
-    field.addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !submit.disabled) { event.preventDefault(); save(); } });
+    field.addEventListener("input", () => { captureDrafts.set(plugin, field.value); grow(); });
+    field.addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event) && !submit.disabled) { event.preventDefault(); save(); } });
     submit.addEventListener("click", save);
     body.appendChild(status);
     return;
@@ -661,5 +675,5 @@ export function defaultFolderLabel(plugin: QiaomuHomePlugin): string {
 }
 
 function onEnterSetting(el: HTMLInputElement, action: () => void): void {
-  el.addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); action(); } });
+  el.addEventListener("keydown", event => { if (event.key === "Enter" && !isComposingKey(event)) { event.preventDefault(); action(); } });
 }

@@ -135,6 +135,7 @@
 }
 
 .qh-search {
+  cursor: text;
   position: relative;
   z-index: 1;
   display: flex;
@@ -1153,7 +1154,7 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 }
 .qh-root .qh-card :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input:not([type]), textarea):is(:focus, :focus-visible, :active) {
   background: var(--qh-field-focus); border-color: var(--qh-field-border-focus); color: var(--qh-text);
-  box-shadow: 0 0 0 3px var(--qh-ring); outline: none;
+  box-shadow: none; outline: none;
 }
 .qh-root .qh-card :is(input, textarea)::placeholder { color: var(--qh-faint); opacity: 1; }
 .qh-root .qh-card input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); opacity: 0.6; cursor: pointer; }
@@ -1215,8 +1216,29 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 
 /* Modal fields: Obsidian's own focus look, without the extra offset outline. */
 .modal.qh-ui :is(input[type="text"], input[type="search"], input[type="url"], input[type="time"], input[type="date"], textarea):focus-visible {
-  outline: none; border-color: var(--interactive-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 22%, transparent);
+  outline: none; border-color: var(--interactive-accent); box-shadow: none;
 }
+
+/* Keep the hint in the DOM for accessibility; clear it visually only while editing. */
+.qh-ui input:focus::placeholder,
+.qh-ui textarea:focus::placeholder,
+.qh-root .qh-card input:focus::placeholder,
+.qh-root .qh-card textarea:focus::placeholder { opacity: 0; }
+.qh-root :is(input, textarea) { caret-color: var(--qh-text, var(--text-normal)); }
+.qh-root.qh-has-photo :is(input, textarea),
+.qh-root.qh-has-photo .qh-card :is(input, textarea) { caret-color: #fff; }
+
+/* Qiaomu app pages have no Markdown statistics. Follow the active view, including split panes. */
+body:has(.workspace-leaf.mod-active > .workspace-leaf-content:is(
+  [data-type="qiaomu-home"],
+  [data-type="qiaomu-agent-view"],
+  [data-type="qiaomu-ai-rss-reader"],
+  [data-type="qiaomu-reader"],
+  [data-type="qiaomu-reader-library"],
+  [data-type="qiaomu-book-reader-ai-chat"],
+  [data-type="qiaomu-radio-view"],
+  [data-type="qiaomu-wechat-preview"]
+)) .status-bar { display: none; }
 
 /* ---------------------------------------------------------------------------
    Plugin guides, list rows and small primitives shared by integration cards.

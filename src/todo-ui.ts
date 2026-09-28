@@ -1,4 +1,5 @@
 import { todoTarget, ensureTodoFile, pendingCarry, carrySelected, carryCandidates, todayHeading, type CarryGroup } from "./todo-carry";
+import { guardFormComposition } from "./input-ui";
 import { underHeading, todayFirst, reopenTodo, taskDisplay } from "./todo-data";
 import { undoNotice } from "./card-ui";
 import { bindOpen, openFromHome } from "./open";
@@ -85,6 +86,7 @@ export function renderTodo(parent: HTMLElement, plugin: QiaomuHomePlugin, limit:
   head.createSpan({ cls: 'qh-card-title', text: L('今日待办', 'Today’s tasks') });
   const options=head.createEl('button',{cls:'qh-icon-button'});setIcon(options,'sliders-horizontal');options.createSpan({cls:'qh-sr-only',text:L('待办设置','Todo settings')});options.addEventListener('click',()=>new TodoOptions(plugin).open());
   const form = card.createEl('form', { cls: 'qh-todo-form' });
+  guardFormComposition(form);
   const label = form.createEl('label', { cls: 'qh-sr-only', text: L('添加待办', 'Add task') });
   const input = label.createEl('input'); label.removeClass('qh-sr-only'); label.addClass('qh-todo-input-label');
   const draftKey = plugin.settings.todoDaily ? 'daily' : path;

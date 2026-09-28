@@ -15,6 +15,7 @@ const input = (el, value) => { el.value = value; el.dispatchEvent(new Event('inp
 const closeMenus = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 try {
   closeMenus();
+  document.querySelectorAll('.modal-header-button:has(.lucide-x)').forEach(e=>e.click());
   app.vault.setConfig('nativeMenus', false);
   const page = plugin.settings.pages.find(p => p.id === plugin.settings.homePageId);
   plugin.settings.activePageId = page.id;
@@ -32,7 +33,7 @@ try {
   plugin.settings.recentPinned = [note.path];
   page.moduleOrder = [`shortcut:${groupId}`, 'working-set', 'recent'];
   await plugin.saveSettings(); await plugin.openHome(); await pause();
-  const root = () => app.workspace.getLeavesOfType('qiaomu-home')[0].view.contentEl;
+  const root = () => app.workspace.getMostRecentLeaf().view.contentEl;
   const cell = id => root().querySelector(`[data-shortcut="${id}"]`);
   assert(!root().classList.contains('qh-editing'), 'Normal mode, no layout editing required');
   const more = cell('qa-url').querySelector('.qh-shortcut-more');
@@ -79,7 +80,7 @@ try {
   return { version: plugin.manifest.version, checks: results };
 } finally {
   closeMenus();
-  document.querySelector('.modal-close-button')?.click();
+  document.querySelector('.modal-header-button:has(.lucide-x)')?.click();
   app.vault.setConfig('nativeMenus', nativeMenus);
   plugin.settings = original;
   await plugin.saveSettings();

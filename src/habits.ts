@@ -1,3 +1,4 @@
+import { isComposingKey } from "./input-ui";
 import { openFromHome } from "./open";
 import { moment, normalizePath, Notice, Setting, TFile, setIcon, type App } from "obsidian";
 import type QiaomuHomePlugin from "./main";
@@ -234,7 +235,7 @@ export function renderHabitEditor(contentEl: HTMLElement, plugin: QiaomuHomePlug
       input = text.inputEl;
       text.setPlaceholder(L("例如：跑步 30 分钟", "e.g. Run 30 minutes"));
       input.addEventListener("input", () => { error.setText(""); error.removeClass("is-error"); input.removeClass("is-invalid"); });
-      input.addEventListener("keydown", event => { if (event.key === "Enter" && !event.isComposing) { event.preventDefault(); submit(); } });
+      input.addEventListener("keydown", event => { if (event.key === "Enter" && !isComposingKey(event)) { event.preventDefault(); submit(); } });
     });
     add.addButton(button => button.setButtonText(L("添加", "Add")).setCta().setDisabled(names.length >= MAX_HABITS).onClick(submit));
     const ideas = suggestedHabits().filter(name => !names.includes(name));
