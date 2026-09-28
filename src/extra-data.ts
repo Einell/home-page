@@ -1,3 +1,4 @@
+import { L } from "./i18n";
 /** Pure helpers behind the second wave of Home cards. Nothing here touches Obsidian APIs. */
 
 // Time ------------------------------------------------------------------------
@@ -37,12 +38,12 @@ export function validZone(zone: string): boolean {
   try { new Intl.DateTimeFormat("en-US", { timeZone: zone }); return true; } catch { return false; }
 }
 /** One zone per line: `Label | Area/City` or just `Area/City`. Invalid zones throw with the line number. */
-export function parseZones(input: string, chinese = false): ZoneEntry[] {
+export function parseZones(input: string): ZoneEntry[] {
   return input.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 8).map((line, index) => {
     const separator = line.indexOf("|");
     const zone = (separator >= 0 ? line.slice(separator + 1) : line).trim();
     const label = (separator >= 0 ? line.slice(0, separator).trim() : "") || zone.split("/").pop()!.replace(/_/g, " ");
-    if (!validZone(zone)) throw new Error(chinese ? `第 ${index + 1} 行：无法识别时区「${zone}」` : `Line ${index + 1}: unknown time zone “${zone}”`);
+    if (!validZone(zone)) throw new Error(L("第 {v} 行：无法识别时区「{zone}」", "Line {v}: unknown time zone “{zone}”", { v: index + 1, zone }));
     return { label: label.slice(0, 40), zone };
   });
 }
@@ -50,7 +51,7 @@ export function zoneLines(zones: ZoneEntry[]): string { return zones.map(zone =>
 export function defaultZones(chinese: boolean): ZoneEntry[] {
   return chinese
     ? [{ label: "北京", zone: "Asia/Shanghai" }, { label: "纽约", zone: "America/New_York" }, { label: "伦敦", zone: "Europe/London" }]
-    : [{ label: "New York", zone: "America/New_York" }, { label: "London", zone: "Europe/London" }, { label: "Tokyo", zone: "Asia/Tokyo" }];
+    : [{ label: L("纽约", "New York"), zone: "America/New_York" }, { label: L("伦敦", "London"), zone: "Europe/London" }, { label: L("东京", "Tokyo"), zone: "Asia/Tokyo" }];
 }
 /** Wall time in a zone plus its calendar-day offset from the local day (-1, 0, +1). */
 export function zoneTime(now: Date, zone: string): { time: string; offset: number } {
@@ -174,8 +175,8 @@ export function parseVideoUrl(input: string): VideoLink | null {
   }
   return null;
 }
-export function videoNote(video: VideoLink, day: string, chinese: boolean): string {
-  const [points, highlights, questions] = chinese ? ["要点", "高亮与时间戳", "问题与行动"] : ["Key points", "Highlights", "Questions and actions"];
+export function videoNote(video: VideoLink, day: string): string {
+  const [points, highlights, questions] = [L("要点", "Key points"), L("高亮与时间戳", "Highlights"), L("问题与行动", "Questions and actions")];
   return [
     "---", `source: ${video.url}`, `platform: ${video.platform}`, `created: ${day}`, "tags:", "  - video", "---", "",
     video.platform === "YouTube" ? `![](${video.url})` : `[${video.platform}](${video.url})`, "",
@@ -211,8 +212,8 @@ export function heatLevel(count: number, max: number): number {
 // Weather ---------------------------------------------------------------------
 
 export interface WeatherLocation { name: string; latitude: number; longitude: number }
-export function weatherLabel(code: number, chinese: boolean): { text: string; icon: string } {
-  const table: Array<[number[], string, string, string]> = [
+export function weatherLabel(code: number): { text: string; icon: string } {
+  const table: Array<[number[], string, string, string]> = /* i18n */ [
     [[0], "晴", "Clear", "sun"], [[1, 2], "多云间晴", "Partly cloudy", "cloud-sun"], [[3], "阴", "Overcast", "cloud"],
     [[45, 48], "雾", "Fog", "cloud-fog"], [[51, 53, 55, 56, 57], "毛毛雨", "Drizzle", "cloud-drizzle"],
     [[61, 63, 65, 66, 67], "雨", "Rain", "cloud-rain"], [[71, 73, 75, 77], "雪", "Snow", "cloud-snow"],
@@ -220,7 +221,7 @@ export function weatherLabel(code: number, chinese: boolean): { text: string; ic
     [[95, 96, 99], "雷雨", "Thunderstorm", "cloud-lightning"],
   ];
   const match = table.find(([codes]) => codes.includes(code));
-  return match ? { text: chinese ? match[1] : match[2], icon: match[3] } : { text: chinese ? "未知" : "Unknown", icon: "cloud" };
+  return match ? { text: L(match[1], match[2]), icon: match[3] } : { text: L("未知", "Unknown"), icon: "cloud" };
 }
 export function forecastUrl(location: WeatherLocation, unit: "c" | "f"): string {
   const params = new URLSearchParams({

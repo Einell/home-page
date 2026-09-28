@@ -1,6 +1,6 @@
 import { Modal, Notice, Setting, setIcon, type App } from "obsidian";
 import { guardFormComposition } from "./input-ui";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 import { PAGE_TEMPLATES, type PageTemplate } from "./settings";
 
 export class NewPageModal extends Modal {
@@ -13,11 +13,11 @@ export class NewPageModal extends Modal {
     let template: PageTemplate | null = null;
     let nameInput: HTMLInputElement | null = null;
     if (this.withTemplates) {
-      form.createDiv({ cls: "qh-template-hint", text: isChinese() ? "从模板开始，卡片已经放好；也可以留空自己布置。" : "Start from a template with cards in place, or start blank." });
+      form.createDiv({ cls: "qh-template-hint", text: L("从模板开始，卡片已经放好；也可以留空自己布置。", "Start from a template with cards in place, or start blank.") });
       const grid = form.createDiv({ cls: "qh-template-grid" });
       grid.setAttr("role", "radiogroup");
-      const choices: Array<[PageTemplate | null, string, string, string]> = [[null, isChinese() ? "空白页签" : "Blank page", isChinese() ? "自己添加内容" : "Add cards yourself", "square-dashed"],
-        ...(Object.entries(PAGE_TEMPLATES) as Array<[PageTemplate, typeof PAGE_TEMPLATES[PageTemplate]]>).map(([id, item]): [PageTemplate, string, string, string] => [id, isChinese() ? item.zh : item.en, isChinese() ? item.descZh : item.descEn, item.icon])];
+      const choices: Array<[PageTemplate | null, string, string, string]> = [[null, L("空白页签", "Blank page"), L("自己添加内容", "Add cards yourself"), "square-dashed"],
+        ...(Object.entries(PAGE_TEMPLATES) as Array<[PageTemplate, typeof PAGE_TEMPLATES[PageTemplate]]>).map(([id, item]): [PageTemplate, string, string, string] => [id, L(item.zh, item.en), L(item.descZh, item.descEn), item.icon])];
       const buttons: HTMLButtonElement[] = [];
       for (const [id, name, desc, icon] of choices) {
         const option = grid.createEl("button", { cls: "qh-template-option" });
@@ -30,7 +30,7 @@ export class NewPageModal extends Modal {
         text.createSpan({ cls: "qh-template-desc", text: desc });
         buttons.push(option);
         option.addEventListener("click", () => {
-          const previousName = template ? (isChinese() ? PAGE_TEMPLATES[template].zh : PAGE_TEMPLATES[template].en) : "";
+          const previousName = template ? (L(PAGE_TEMPLATES[template].zh, PAGE_TEMPLATES[template].en)) : "";
           template = id;
           buttons.forEach(button => button.setAttr("aria-checked", String(button === option)));
           // Follow the template name unless the user typed their own.

@@ -1,7 +1,8 @@
+import { L } from "./i18n";
 import { webTarget } from "./shortcuts";
 export function templateFileName(value: string): string {
   const name = value.trim().replace(/\.md$/i, "");
-  if (!name || name.length > 120 || /[\\/:*?"<>|]/.test(name) || [...name].some(char => char.charCodeAt(0) < 32) || /^\.{1,2}$/.test(name) || /[. ]$/.test(name)) throw new Error("请输入有效的笔记名称（不含路径或特殊字符）");
+  if (!name || name.length > 120 || /[\\/:*?"<>|]/.test(name) || [...name].some(char => char.charCodeAt(0) < 32) || /^\.{1,2}$/.test(name) || /[. ]$/.test(name)) throw new Error(L("请输入有效的笔记名称（不含路径或特殊字符）", "Enter a valid note name (no path or special characters)"));
   return `${name}.md`;
 }
 export function fillTemplate(source: string, title: string, format: (pattern: string) => string): string {
@@ -12,7 +13,7 @@ export function fillTemplate(source: string, title: string, format: (pattern: st
   });
 }
 export function parseBookmarks(html: string, decode: (value: string) => string): Array<{ name: string; url: string }> {
-  if (html.length > 2_000_000) throw new Error("书签文件太大，请使用小于 2 MB 的 HTML 文件");
+  if (html.length > 2_000_000) throw new Error(L("书签文件太大，请使用小于 2 MB 的 HTML 文件", "The bookmark file is too large; use an HTML file under 2 MB"));
   const results: Array<{ name: string; url: string }> = [], seen = new Set<string>();
   const pattern = /<a\b[^>]*\bhref\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a\s*>/gi;
   for (const match of html.matchAll(pattern)) {

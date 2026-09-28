@@ -1,9 +1,8 @@
 import { Modal, Notice, requestUrl, SecretComponent, Setting, setIcon } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { cardAction } from "./card-ui";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 
 /**
  * OAuth App client id for GitHub's device flow. Device flow needs no client secret, so the id is safe to ship.

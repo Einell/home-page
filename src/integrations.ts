@@ -3,12 +3,11 @@ import { Notice, TFile, setIcon, type App } from "obsidian";
 import type QiaomuHomePlugin from "./main";
 import { cardAction, fieldRow } from "./card-ui";
 import { installState, openCommunityPluginSettings, openPluginPage, runCommand, type InstallState } from "./ecosystem";
-import { isChinese } from "./i18n";
+import { L } from "./i18n";
 import { moduleOptions } from "./settings";
 import { INTEGRATIONS, type IntegrationId } from "./integration-catalog";
 export { INTEGRATIONS, isIntegration, type IntegrationId } from "./integration-catalog";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 
 interface PluginHost { plugins?: { plugins?: Record<string, unknown> } }
 function pluginInstance<T>(app: App, id: string): T | null {
@@ -25,11 +24,11 @@ export function renderPluginGuide(parent: HTMLElement, app: App, options: { plug
   const status = guide.createDiv({ cls: "qh-plugin-guide-status" });
   setIcon(status.createSpan(), options.state === "disabled" ? "power" : "package");
   status.createSpan({ text: options.state === "disabled"
-    ? L(`已安装 ${options.pluginName}，尚未启用`, `${options.pluginName} is installed but off`)
-    : L(`需要 ${options.pluginName} 插件（免费）`, `Uses the free ${options.pluginName} plugin`) });
+    ? L("已安装 {pluginName}，尚未启用", "{pluginName} is installed but off", { pluginName: options.pluginName })
+    : L("需要 {pluginName} 插件（免费）", "Uses the free {pluginName} plugin", { pluginName: options.pluginName }) });
   const actions = guide.createDiv({ cls: "qh-workflow-actions" });
   if (options.state === "disabled") cardAction(actions, L("去启用", "Turn it on"), () => openCommunityPluginSettings(app), "power", true);
-  else cardAction(actions, L(`安装 ${options.pluginName}`, `Install ${options.pluginName}`), () => openPluginPage(options.pluginId), "download", true);
+  else cardAction(actions, L("安装 {pluginName}", "Install {pluginName}", { pluginName: options.pluginName }), () => openPluginPage(options.pluginId), "download", true);
   if (options.repo) cardAction(actions, L("了解更多", "Learn more"), () => window.open(options.repo, "_blank", "noopener,noreferrer"), "arrow-up-right");
   guide.createDiv({ cls: "qh-native-scope", text: L("装好后这张卡片会自动更新", "This card updates once it is ready") });
 }
@@ -80,7 +79,7 @@ export function renderIntegration(parent: HTMLElement, plugin: QiaomuHomePlugin,
     if (sub) text.createSpan({ cls: "qh-item-sub", text: sub });
     button.addEventListener("click", run);
   };
-  const command = (ids: string[]) => { for (const commandId of ids) if (runCommand(app, commandId)) return true; new Notice(L(`${config.pluginName} 的这个命令不可用，请更新插件`, `This ${config.pluginName} command is unavailable; update the plugin`)); return false; };
+  const command = (ids: string[]) => { for (const commandId of ids) if (runCommand(app, commandId)) return true; new Notice(L("{pluginName} 的这个命令不可用，请更新插件", "This {pluginName} command is unavailable; update the plugin", { pluginName: config.pluginName })); return false; };
   const recentFiles = (match: (file: TFile) => boolean) => app.vault.getFiles().filter(match).sort((a, b) => b.stat.mtime - a.stat.mtime);
 
   if (id === "quickadd-actions") {
@@ -111,7 +110,7 @@ export function renderIntegration(parent: HTMLElement, plugin: QiaomuHomePlugin,
     void Promise.resolve(api?.query?.(query)).then(result => {
       if (!card.isConnected) return; results.empty();
       if (!result) { results.createDiv({ cls: "qh-card-empty", text: L("Dataview 还在建立索引，稍后刷新", "Dataview is still indexing") }); return; }
-      if (!result.successful || !result.value) { results.createDiv({ cls: "qh-card-empty", text: L(`查询出错：${result.error ?? ""}`, `Query error: ${result.error ?? ""}`) }); return; }
+      if (!result.successful || !result.value) { results.createDiv({ cls: "qh-card-empty", text: L("查询出错：{v}", "Query error: {v}", { v: result.error ?? "" }) }); return; }
       const rows = (result.value.values ?? []).slice(0, options.limit);
       if (!rows.length) results.createDiv({ cls: "qh-card-empty", text: L("没有结果", "No results") });
       for (const value of rows) {
@@ -137,7 +136,7 @@ export function renderIntegration(parent: HTMLElement, plugin: QiaomuHomePlugin,
       if (!card.isConnected) return;
       shown.forEach((file, index) => {
         const summary = summaries[index];
-        row(file.basename, L(`${summary.lanes} 列 · ${summary.open} 张未完成`, `${summary.lanes} lanes · ${summary.open} open`), () => open(file), "columns-3");
+        row(file.basename, L("{lanes} 列 · {open} 张未完成", "{lanes} lanes · {open} open", { lanes: summary.lanes, open: summary.open }), () => open(file), "columns-3");
       });
       cardAction(body, L("新建看板", "New board"), () => command(["obsidian-kanban:create-new-kanban-board"]), "plus", !boards.length);
     });
@@ -159,7 +158,7 @@ export function renderIntegration(parent: HTMLElement, plugin: QiaomuHomePlugin,
       const cache = app.metadataCache.getFileCache(file);
       return (cache?.tags ?? []).some(entry => entry.tag.startsWith(tag)) || [cache?.frontmatter?.tags].flat().some(value => typeof value === "string" && `#${value.replace(/^#/, "")}`.startsWith(tag));
     });
-    body.createDiv({ cls: "qh-native-line", text: decks.length ? L(`${decks.length} 篇笔记含 ${tag} 卡片`, `${decks.length} notes with ${tag} cards`) : L(`给笔记加上 ${tag} 标签即可制卡`, `Tag notes with ${tag} to create cards`) });
+    body.createDiv({ cls: "qh-native-line", text: decks.length ? L("{length} 篇笔记含 {tag} 卡片", "{length} notes with {tag} cards", { length: decks.length, tag }) : L("给笔记加上 {tag} 标签即可制卡", "Tag notes with {tag} to create cards", { tag }) });
     const actions = body.createDiv({ cls: "qh-workflow-actions" });
     cardAction(actions, L("复习卡片", "Review cards"), () => command(["obsidian-spaced-repetition:srs-review-flashcards"]), "layers", true);
     cardAction(actions, L("复习笔记", "Review notes"), () => command(["obsidian-spaced-repetition:srs-note-review-open-note"]), "file-text");

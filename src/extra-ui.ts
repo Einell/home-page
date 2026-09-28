@@ -11,7 +11,7 @@ import {
   parseForecast, parseGeocoding, parseIcs, parseQuotes, parseSnippets, parseVideoUrl, parseZones, timeProgress, videoNote, weatherLabel,
   zoneLines, zoneTime, type Forecast,
 } from "./extra-data";
-import { isChinese, t } from "./i18n";
+import { L, currentLanguage, dateLocale, isChinese, t } from "./i18n";
 import { eligibleNote, inFolder } from "./productivity-data";
 import { fillTemplate, templateFileName } from "./quick-tools";
 import { localDay, moduleOptions, type ModuleOptions } from "./settings";
@@ -19,9 +19,31 @@ import { dailyExcerpt } from "./home-native-modules";
 import { captureNote, dailyOptions, ensureParent } from "./today";
 import { SYNTAX_EXAMPLES, autoSave } from "./option-fields";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 interface Day { format(pattern?: string): string; clone(): Day; startOf(unit: string): Day; endOf(unit: string): Day; diff(other: Day, unit: string): number }
 const mo = moment as unknown as (input?: string | Date, format?: string) => Day;
+/** Mon / Wed / Fri labels for the heatmap rows, in the Home language. */
+function weekdayLabels(): string[] {
+  // 2024-01-01 was a Monday.
+  const name = (day: number) => new Date(2024, 0, day).toLocaleDateString(dateLocale(), { weekday: "short" });
+  return isChinese() ? ["一", "", "三", "", "五", "", ""] : [name(1), "", name(3), "", name(5), "", ""];
+}
+/** "YYYY-MM-DD" or a Date, read as a local calendar day. */
+function localDate(day: string | Date): Date {
+  if (day instanceof Date) return day;
+  const [year, month, date] = day.slice(0, 10).split("-").map(Number);
+  return new Date(year, month - 1, date);
+}
+function shortWeekday(day: string): string {
+  return localDate(day).toLocaleDateString(dateLocale(), { weekday: "short" });
+}
+function shortDate(day: string | Date): string {
+  return isChinese() ? mo(day, typeof day === "string" ? "YYYY-MM-DD" : undefined).format("M月D日 ddd")
+    : localDate(day).toLocaleDateString(dateLocale(), { weekday: "short", month: "short", day: "numeric" });
+}
+function monthLabel(day: string): string {
+  const [year, month] = day.split("-").map(Number);
+  return isChinese() ? `${month}月` : new Date(year, month - 1, 1).toLocaleDateString(dateLocale(), { month: "short" });
+}
 
 /** Remote text shared by every Home tab; failures are not cached. */
 const remote = new Map<string, { at: number; value: Promise<string> }>();
@@ -99,7 +121,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
 
   if (id === "quick-capture") {
     const daily = plugin.settings.captureTarget === "daily";
-    const status = createDiv({ cls: "qh-native-scope", text: daily ? L("写入今日日记 · 回车保存", "Goes to today's daily note · Enter to save") : L(`写入 ${plugin.settings.captureInboxPath} · 回车保存`, `Goes to ${plugin.settings.captureInboxPath} · Enter to save`) });
+    const status = createDiv({ cls: "qh-native-scope", text: daily ? L("写入今日日记 · 回车保存", "Goes to today's daily note · Enter to save") : L("写入 {captureInboxPath} · 回车保存", "Goes to {captureInboxPath} · Enter to save", { captureInboxPath: plugin.settings.captureInboxPath }) });
     status.setAttr("aria-live", "polite");
     // A textarea so pasted or Shift+Enter lines are kept; Enter saves. Extra lines are indented under the first.
     const row = body.createDiv({ cls: "qh-field-row qh-capture-row" });
@@ -120,7 +142,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
       void captureNote(app, plugin.settings, text).then(path => {
         if (captureDrafts.get(plugin) === text) captureDrafts.delete(plugin);
         if (field.value === text) field.value = "";
-        grow(); status.setText(L(`已记下 · ${path}`, `Saved · ${path}`));
+        grow(); status.setText(L("已记下 · {path}", "Saved · {path}", { path }));
         if (field.ownerDocument.activeElement === submit) field.focus();
       }).catch((error: unknown) => new Notice(t("capture.failed", { message: error instanceof Error ? error.message : String(error) })))
         .finally(() => {
@@ -138,7 +160,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
   if (id === "weekly-review") {
     let week: WeekPaths;
     try { week = weeklyNote(plugin, options); } catch (error) { setup(error instanceof Error ? error.message : String(error), L("修改设置", "Settings")); return; }
-    card.insertBefore(createDiv({ cls: "qh-native-scope", text: `${week.label} · ${week.range} · ${week.daysLeft ? L(`本周还剩 ${week.daysLeft} 天`, `${week.daysLeft} days left`) : L("本周最后一天", "Last day of the week")}` }), body);
+    card.insertBefore(createDiv({ cls: "qh-native-scope", text: `${week.label} · ${week.range} · ${week.daysLeft ? L("本周还剩 {daysLeft} 天", "{daysLeft} days left", { daysLeft: week.daysLeft }) : L("本周最后一天", "Last day of the week")}` }), body);
     const file = app.vault.getAbstractFileByPath(week.path);
     if (file instanceof TFile) {
       run(async () => {
@@ -181,7 +203,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
       if (progress.work !== null) {
         const left = progress.workLeft;
         row(L("工作", "Work"), progress.work,
-          progress.workState === "before" ? start : progress.workState === "after" ? L("已结束", "Done") : L(`剩 ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`, `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`));
+          progress.workState === "before" ? start : progress.workState === "after" ? L("已结束", "Done") : L("剩 {v}:{v2}", "{v}:{v2} left", { v: Math.floor(left / 60), v2: String(left % 60).padStart(2, "0") }));
       }
       row(L("今天", "Today"), progress.day);
       row(L("本周", "Week"), progress.week);
@@ -215,15 +237,15 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     run(async () => {
       const forecast: Forecast = parseForecast(JSON.parse(await fetchText(forecastUrl(location, unit), 30 * 60000)));
       if (!card.isConnected) return; body.empty();
-      const now = weatherLabel(forecast.current.code, isChinese());
+      const now = weatherLabel(forecast.current.code);
       const top = body.createDiv({ cls: "qh-weather-now" });
       setIcon(top.createSpan({ cls: "qh-weather-icon" }), now.icon);
       top.createSpan({ cls: "qh-native-count", text: `${Math.round(forecast.current.temperature)}°` });
       top.createSpan({ cls: "qh-native-line", text: `${location.name} · ${now.text} · ${L("体感", "feels")} ${Math.round(forecast.current.feels)}°` });
       forecast.days.forEach((day, index) => {
-        const label = weatherLabel(day.code, isChinese());
+        const label = weatherLabel(day.code);
         const row = body.createDiv({ cls: "qh-weather-day" });
-        row.createSpan({ text: index === 0 ? L("今天", "Today") : index === 1 ? L("明天", "Tomorrow") : mo(day.day, "YYYY-MM-DD").format("ddd") });
+        row.createSpan({ text: index === 0 ? L("今天", "Today") : index === 1 ? L("明天", "Tomorrow") : shortWeekday(day.day) });
         setIcon(row.createSpan({ cls: "qh-weather-icon" }), label.icon);
         row.createSpan({ text: label.text });
         row.createSpan({ cls: "qh-weather-temp", text: `${Math.round(day.min)}° / ${Math.round(day.max)}°${day.rain !== null ? ` · ${day.rain}%` : ""}` });
@@ -265,7 +287,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         if (!cards.length) { message(L("这篇笔记没有「问题 :: 答案」格式的行", "No “question :: answer” lines in this note")); button(body, L("打开笔记", "Open note"), () => open(file), "arrow-up-right"); return; }
         const index = dailyIndex(localDay(), cards.length, offsets.get(key) ?? 0), item = cards[index];
         const shown = revealed.has(`${key}:${index}`);
-        body.createDiv({ cls: "qh-native-scope", text: L(`第 ${index + 1} / ${cards.length} 张`, `Card ${index + 1} of ${cards.length}`) });
+        body.createDiv({ cls: "qh-native-scope", text: L("第 {v} / {length} 张", "Card {v} of {length}", { v: index + 1, length: cards.length }) });
         body.createDiv({ cls: "qh-flash-question", text: item.question });
         const answer = body.createDiv({ cls: "qh-flash-answer", text: shown ? item.answer : "" });
         answer.setAttr("aria-live", "polite");
@@ -294,8 +316,8 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         const copy = row.createEl("button", { cls: "qh-workflow-row" });
         copy.createSpan({ cls: "qh-workflow-title", text: snippet.title });
         copy.createSpan({ cls: "qh-item-sub", text: snippet.body.split("\n").find(line => line.trim())?.slice(0, 80) ?? "" });
-        copy.setAttr("aria-label", L(`复制 ${snippet.title}`, `Copy ${snippet.title}`));
-        copy.addEventListener("click", () => void navigator.clipboard.writeText(snippet.body).then(() => new Notice(L(`已复制「${snippet.title}」`, `Copied “${snippet.title}”`))));
+        copy.setAttr("aria-label", L("复制 {title}", "Copy {title}", { title: snippet.title }));
+        copy.addEventListener("click", () => void navigator.clipboard.writeText(snippet.body).then(() => new Notice(L("已复制「{title}」", "Copied “{title}”", { title: snippet.title }))));
         if (agent) {
           const send = row.createEl("button", { cls: "qh-icon-button qh-item-action" });
           setIcon(send, "bot"); send.setAttr("aria-label", L("交给 Agent", "Send to Agent"));
@@ -322,7 +344,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         if (path.split("/").includes("..") || path.startsWith(`${app.vault.configDir}/`)) throw new Error(L("请选择库内的普通笔记文件夹", "Choose a note folder inside the vault"));
         await ensureParent(app, path);
         const existing = app.vault.getAbstractFileByPath(path);
-        const file = existing instanceof TFile ? existing : await app.vault.create(path, videoNote(video, localDay(), isChinese()));
+        const file = existing instanceof TFile ? existing : await app.vault.create(path, videoNote(video, localDay()));
         url.value = ""; title.value = "";
         await openFromHome(plugin, card, file);
       })().catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))).finally(() => { create.disabled = false; });
@@ -330,7 +352,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
     if (canAsk(app)) button(actions, L("交给 Agent 总结", "Summarize with Agent"), () => {
       const video = parseVideoUrl(url.value);
       if (!video) { new Notice(L("请先粘贴视频链接", "Paste a video link first")); url.focus(); return; }
-      void askAgent(app, L(`请总结这个视频的要点，并按时间戳列出值得记住的片段：${video.url}`, `Summarize this video and list memorable moments with timestamps: ${video.url}`));
+      void askAgent(app, L("请总结这个视频的要点，并按时间戳列出值得记住的片段：{url}", "Summarize this video and list memorable moments with timestamps: {url}", { url: video.url }));
     }, "bot");
     onEnter(url, () => create.click()); onEnter(title, () => create.click());
     if (options.folder) card.createDiv({ cls: "qh-native-scope", text: options.folder });
@@ -351,7 +373,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
         const day = localDay(event.start);
         if (day !== group) {
           group = day;
-          body.createDiv({ cls: "qh-agenda-day", text: day === today ? L("今天", "Today") : day === tomorrow ? L("明天", "Tomorrow") : mo(event.start).format(isChinese() ? "M月D日 ddd" : "ddd, MMM D") });
+          body.createDiv({ cls: "qh-agenda-day", text: day === today ? L("今天", "Today") : day === tomorrow ? L("明天", "Tomorrow") : shortDate(event.start) });
         }
         const row = body.createDiv({ cls: "qh-agenda-row" });
         const time = (date: Date) => mo(date).format("HH:mm");
@@ -367,7 +389,7 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
 
   if (id === "ambient-sound") {
     const player = plugin.ambient;
-    const kinds: Array<[NoiseKind, string, string]> = [["white", "白噪音", "White"], ["pink", "粉红噪音", "Pink"], ["brown", "棕噪音", "Brown"]];
+    const kinds: Array<[NoiseKind, string, string]> = /* i18n */ [["white", "白噪音", "White"], ["pink", "粉红噪音", "Pink"], ["brown", "棕噪音", "Brown"]];
     const paint = () => {
       body.empty();
       const choice = body.createDiv({ cls: "qh-discovery-sites" });
@@ -443,25 +465,25 @@ export function renderExtra(parent: HTMLElement, plugin: QiaomuHomePlugin, id: E
       for (let column = 0; column < columns; column++) {
         const first = shown[column * 7];
         const month = first ? Number(first.day.slice(5, 7)) : -1;
-        months.createSpan({ text: first && month !== lastMonth && column < columns - 1 ? (isChinese() ? `${month}月` : mo(first.day, "YYYY-MM-DD").format("MMM")) : "" });
+        months.createSpan({ text: first && month !== lastMonth && column < columns - 1 ? monthLabel(first.day) : "" });
         if (first) lastMonth = month;
       }
       const frame = heat.createDiv({ cls: "qh-heat-frame" });
       const days = frame.createDiv({ cls: "qh-heat-weekdays", attr: { "aria-hidden": "true" } });
-      for (const label of isChinese() ? ["一", "", "三", "", "五", "", ""] : ["Mon", "", "Wed", "", "Fri", "", ""]) days.createSpan({ text: label });
+      for (const label of weekdayLabels()) days.createSpan({ text: label });
       const grid = frame.createDiv({ cls: "qh-heatmap" });
       grid.style.gridTemplateColumns = `repeat(${columns}, 12px)`;
       grid.setAttr("role", "img");
-      grid.setAttr("aria-label", L(`最近 ${columns} 周有 ${active} 天在写，最多一天 ${max} 篇`, `${active} active days in ${columns} weeks, up to ${max} notes a day`));
+      grid.setAttr("aria-label", L("最近 {columns} 周有 {active} 天在写，最多一天 {max} 篇", "{active} active days in {columns} weeks, up to {max} notes a day", { active, columns, max }));
       for (const day of shown) {
         const level = heatLevel(day.count, max);
         const path = dailyPaths.get(day.day);
         const cell = grid.createDiv({ cls: `qh-heat-cell qh-heat-${level}${day.day === todayKey ? " is-today" : ""}${path ? " has-note" : ""}` });
-        setTooltip(cell, `${mo(day.day, "YYYY-MM-DD").format(isChinese() ? "M月D日 ddd" : "ddd, MMM D")} · ${day.count ? L(`${day.count} 篇`, `${day.count} notes`) : L("没有记录", "No activity")}${path ? L(" · 点击打开日记", " · click to open") : ""}`, { delay: 150 });
+        setTooltip(cell, `${shortDate(day.day)} · ${day.count ? L("{count} 篇", "{count} notes", { count: day.count }) : L("没有记录", "No activity")}${path ? L(" · 点击打开日记", " · click to open") : ""}`, { delay: 150 });
         if (path) cell.addEventListener("click", () => { const file = app.vault.getAbstractFileByPath(path); if (file instanceof TFile) open(file); });
       }
       const foot = heat.createDiv({ cls: "qh-heat-foot" });
-      foot.createSpan({ text: L(`近 ${columns} 周 · 活跃 ${active} 天`, `${columns} weeks · ${active} active days`) });
+      foot.createSpan({ text: L("近 {columns} 周 · 活跃 {active} 天", "{columns} weeks · {active} active days", { columns, active }) });
       const legend = foot.createDiv({ cls: "qh-heat-legend", attr: { "aria-hidden": "true" } });
       legend.createSpan({ text: L("少", "Less") });
       for (let level = 0; level <= 4; level++) legend.createDiv({ cls: `qh-heat-cell qh-heat-${level}` });
@@ -573,7 +595,7 @@ export function renderExtraOptions(contentEl: HTMLElement, plugin: QiaomuHomePlu
   if (id === "weekly-review") {
     let week: WeekPaths | null = null;
     try { week = weeklyNote(plugin, options); } catch { /* shown below */ }
-    if (week?.periodic) { contentEl.createEl("p", { text: L(`正在使用 Periodic Notes 的周记设置：${week.path}`, `Using Periodic Notes weekly settings: ${week.path}`) }); count(); return; }
+    if (week?.periodic) { contentEl.createEl("p", { text: L("正在使用 Periodic Notes 的周记设置：{path}", "Using Periodic Notes weekly settings: {path}", { path: week.path }) }); count(); return; }
     folderDropdown(contentEl, plugin, L("周记文件夹", "Weekly note folder"), defaultFolderLabel(plugin), options.folder ?? "", value => { void persist({ folder: value }); });
     const preview = new Setting(contentEl).setName(L("文件名格式", "File name format"));
     const sample = preview.descEl.createDiv({ text: `${L("本周", "This week")}：${mo().format(options.format ?? "gggg-[W]ww")}.md` });
@@ -602,7 +624,7 @@ export function renderExtraOptions(contentEl: HTMLElement, plugin: QiaomuHomePlu
     const zones = new Setting(contentEl).setName(L("城市与时区", "Cities and time zones"))
       .setDesc(L("每行一个，最多八个：名称 | 时区，例如 东京 | Asia/Tokyo。离开输入框或按 ⌘↵ 保存。", "One per line, up to eight: Name | Zone, e.g. Tokyo | Asia/Tokyo. Saves when you leave the field or press ⌘↵."));
     zones.addTextArea(input => { input.inputEl.rows = 5; input.setValue(zoneLines(options.zones?.length ? options.zones : defaultZones(isChinese())));
-      autoSave(contentEl, zones, input.inputEl, value => persist({ zones: parseZones(value, isChinese()) })); });
+      autoSave(contentEl, zones, input.inputEl, value => persist({ zones: parseZones(value) })); });
     return;
   }
   if (id === "weather") {
@@ -615,7 +637,7 @@ export function renderExtraOptions(contentEl: HTMLElement, plugin: QiaomuHomePlu
       if (!query.trim()) return;
       results.setText(L("正在查找…", "Searching…"));
       try {
-        const url = `https://geocoding-api.open-meteo.com/v1/search?${new URLSearchParams({ name: query.trim(), count: "6", language: isChinese() ? "zh" : "en", format: "json" }).toString()}`;
+        const url = `https://geocoding-api.open-meteo.com/v1/search?${new URLSearchParams({ name: query.trim(), count: "6", language: currentLanguage(), format: "json" }).toString()}`;
         const places = parseGeocoding(JSON.parse(await fetchText(url, 3600000)));
         results.empty();
         if (!places.length) { results.setText(L("没有找到这个城市", "No matching city")); return; }
@@ -671,7 +693,7 @@ export function renderExtraOptions(contentEl: HTMLElement, plugin: QiaomuHomePlu
 }
 
 export function defaultFolderLabel(plugin: QiaomuHomePlugin): string {
-  return plugin.settings.createFolder ? L(`默认：${plugin.settings.createFolder}`, `Default: ${plugin.settings.createFolder}`) : L("默认：Obsidian 新笔记位置", "Default: Obsidian's new-note location");
+  return plugin.settings.createFolder ? L("默认：{createFolder}", "Default: {createFolder}", { createFolder: plugin.settings.createFolder }) : L("默认：Obsidian 新笔记位置", "Default: Obsidian's new-note location");
 }
 
 function onEnterSetting(el: HTMLInputElement, action: () => void): void {

@@ -1,4 +1,11 @@
 import { getLanguage } from "obsidian";
+import de from "./locales/de.json";
+import es from "./locales/es.json";
+import fr from "./locales/fr.json";
+import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
+import pt from "./locales/pt.json";
+import ru from "./locales/ru.json";
 
 const zh = {
   "brand": "乔木Home",
@@ -222,14 +229,72 @@ const en: Record<Key, string> = {
   "time.days": "{n} d ago",
 };
 
+/** Languages Home ships. Chinese and English live in source; the rest are keyed by the English text. */
+export const LANGUAGES = [
+  { id: "zh", name: "简体中文", locale: "zh-CN" },
+  { id: "en", name: "English", locale: "en" },
+  { id: "ja", name: "日本語", locale: "ja-JP" },
+  { id: "ko", name: "한국어", locale: "ko-KR" },
+  { id: "fr", name: "Français", locale: "fr-FR" },
+  { id: "de", name: "Deutsch", locale: "de-DE" },
+  { id: "es", name: "Español", locale: "es-ES" },
+  { id: "pt", name: "Português", locale: "pt-BR" },
+  { id: "ru", name: "Русский", locale: "ru-RU" },
+] as const;
+export type Language = typeof LANGUAGES[number]["id"];
+export type LanguagePreference = Language | "auto";
+
+const TRANSLATIONS: Record<Exclude<Language, "zh" | "en">, Record<string, string>> = { ja, ko, fr, de, es, pt, ru };
+let preference: LanguagePreference = "auto";
+
+export function isLanguage(value: unknown): value is Language {
+  return LANGUAGES.some((item) => item.id === value);
+}
+
+/** Map Obsidian's interface language ("zh-TW", "pt-BR", …) to a shipped language; anything else reads English. */
+export function languageFromObsidian(code: string): Language {
+  const base = code.toLowerCase().split(/[-_]/)[0];
+  return isLanguage(base) ? base : "en";
+}
+
+export function setLanguage(value: LanguagePreference): void {
+  preference = value === "auto" || isLanguage(value) ? value : "auto";
+}
+
+export function currentLanguage(): Language {
+  if (preference !== "auto") return preference;
+  try { return languageFromObsidian(getLanguage()); }
+  catch { return "zh"; }
+}
+
+/** BCP 47 tag for dates and numbers in the current language. */
+export function dateLocale(): string {
+  const id = currentLanguage();
+  return LANGUAGES.find((item) => item.id === id)!.locale;
+}
+
 export function isChinese(): boolean {
-  try { return getLanguage().toLowerCase().startsWith("zh"); }
-  catch { return true; }
+  return currentLanguage() === "zh";
+}
+
+function format(template: string, vars?: Record<string, string | number>): string {
+  return vars ? template.replace(/\{(\w+)\}/g, (match, name: string) => name in vars ? String(vars[name]) : match) : template;
+}
+
+/** Translate English source text; untranslated text falls back to English. */
+export function translate(english: string, language = currentLanguage()): string {
+  if (language === "zh" || language === "en") return english;
+  return TRANSLATIONS[language][english] || english;
+}
+
+/** Inline text: Chinese and English written at the call site, other languages looked up by the English. */
+export function L(zh: string, en: string, vars?: Record<string, string | number>): string {
+  const language = currentLanguage();
+  return format(language === "zh" ? zh : translate(en, language), vars);
 }
 
 export function t(key: Key, vars: Record<string, string | number> = {}): string {
-  const template = isChinese() ? zh[key] : en[key];
-  return template.replace(/\{(\w+)\}/g, (_, name: string) => String(vars[name] ?? ""));
+  return L(zh[key], en[key], vars);
 }
 
 export function greeting(hour: number): string {

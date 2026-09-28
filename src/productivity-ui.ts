@@ -3,7 +3,7 @@ import { cardAction, fieldRow } from "./card-ui";
 import { renderHabitCard } from "./habits";
 import { getAllTags, moment, Notice, TFile, setIcon } from "obsidian";
 import type QiaomuHomePlugin from "./main";
-import { isChinese, t } from "./i18n";
+import { L, t } from "./i18n";
 import { localDay, moduleOptions } from "./settings";
 import { PRODUCTIVITY_MODULES, type ProductivityId } from "./productivity-catalog";
 import { eligibleNote, focusRemaining, inFolder, taskProgress } from "./productivity-data";
@@ -21,7 +21,6 @@ import { readFocus } from "./daily-focus";
 import { readTodos } from "./todo-data";
 import { Modal, Setting } from "obsidian";
 
-const L = (zh: string, en: string) => isChinese() ? zh : en;
 
 interface TasksApi { executeToggleTaskDoneCommand(line: string, path: string): string }
 /** The Tasks plugin's public API: completes with ✅ date and creates the next copy of recurring tasks. */
@@ -108,9 +107,9 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
         const row = body.createDiv({ cls: "qh-workflow-task" });
         if (late) row.addClass("is-overdue");
         const checkboxLabel = row.createEl("label", { cls: "qh-task-check" });
-        checkboxLabel.createSpan({ cls: "qh-sr-only", text: L(`完成 ${taskDisplay(task.text)}`, `Complete ${taskDisplay(task.text)}`) });
+        checkboxLabel.createSpan({ cls: "qh-sr-only", text: L("完成 {v}", "Complete {v}", { v: taskDisplay(task.text) }) });
         const checkbox = checkboxLabel.createEl("input", { type: "checkbox" });
-        const date = late ? L(`逾期 ${late} 天`, `${late} day${late > 1 ? "s" : ""} overdue`)
+        const date = late ? L("逾期 {late} 天", late > 1 ? "{late} days overdue" : "{late} day overdue", { late })
           : id === "milestones" ? task.due : task.due === today ? "" : task.scheduled === today ? L("计划今天", "Scheduled today") : when(task);
         const item = note(file, taskDisplay(task.text), [task.name, date].filter(Boolean).join(" · "), task.line); row.appendChild(item);
         if (late) {
@@ -142,7 +141,7 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
     if (!options.path) { message(L("选择一个 Markdown 模板开始", "Choose a Markdown template to begin")); button(body, L("选择模板", "Choose template"), configure, "settings-2", true); return; }
     const template = app.vault.getAbstractFileByPath(options.path);
     if (!(template instanceof TFile)) { message(L("模板已移动或不存在", "Template is missing")); button(body, L("重新选择模板", "Choose template"), configure, "settings-2", true); return; }
-    body.createDiv({ cls: "qh-native-scope", text: L(`模板：${template.basename}`, `Template: ${template.basename}`) });
+    body.createDiv({ cls: "qh-native-scope", text: L("模板：{basename}", "Template: {basename}", { basename: template.basename }) });
     const { input, submit: create } = fieldRow(body, { placeholder: L("新笔记名称", "New note name"), label: L("新笔记名称", "New note name"), icon: "plus", action: L("创建笔记", "Create note"), onSubmit: () => {
       create.disabled = true;
       void (async () => {
@@ -180,23 +179,23 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
       row.hidden = index >= shown;
       rows.push(row);
       if (file instanceof TFile) row.appendChild(note(file, file.basename, file.parent && !file.parent.isRoot() ? file.parent.path : ""));
-      else row.createDiv({ cls: "qh-card-empty", text: L(`找不到：${path}`, `Missing: ${path}`) });
+      else row.createDiv({ cls: "qh-card-empty", text: L("找不到：{path}", "Missing: {path}", { path }) });
       const remove = row.createEl("button", { cls: "qh-icon-button" });
       setIcon(remove, "x"); remove.createSpan({ cls: "qh-sr-only", text: L("从笔记组移除", "Remove from set") });
       remove.addEventListener("click", () => store(paths.filter(entry => entry !== path)));
     }
     if (paths.length > shown) {
       let expanded = false;
-      const toggle = body.createEl("button", { cls: "qh-working-toggle", text: L(`展开其余 ${paths.length - shown} 篇`, `Show ${paths.length - shown} more`), attr: { "aria-expanded": "false" } });
+      const toggle = body.createEl("button", { cls: "qh-working-toggle", text: L("展开其余 {v} 篇", "Show {v} more", { v: paths.length - shown }), attr: { "aria-expanded": "false" } });
       toggle.addEventListener("click", () => {
         expanded = !expanded;
         rows.forEach((row, index) => { row.hidden = !expanded && index >= shown; });
         toggle.setAttr("aria-expanded", String(expanded));
-        toggle.setText(expanded ? L("收起", "Show less") : L(`展开其余 ${paths.length - shown} 篇`, `Show ${paths.length - shown} more`));
+        toggle.setText(expanded ? L("收起", "Show less") : L("展开其余 {v} 篇", "Show {v} more", { v: paths.length - shown }));
       });
     }
     const actions = body.createDiv({ cls: "qh-workflow-actions" });
-    if (existing.length) button(actions, L(`打开这 ${existing.length} 篇`, `Open ${existing.length} notes`), () => {
+    if (existing.length) button(actions, L("打开这 {length} 篇", "Open {length} notes", { length: existing.length }), () => {
       const opened = new Set(openNotePaths(plugin));
       void (async () => {
         for (const path of existing) {
@@ -215,7 +214,7 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
       const captured = [...new Set(openNotePaths(plugin))].slice(0, 20);
       if (!captured.length) { new Notice(L("先打开几篇 Markdown 笔记", "Open some Markdown notes first")); return; }
       if (paths.length && paths.join("\n") !== captured.join("\n")) new ConfirmModal(app, L("替换笔记组？", "Replace this set?"),
-        L(`当前笔记组的 ${paths.length} 篇会被替换为正在打开的 ${captured.length} 篇。`, `The ${paths.length} saved notes will be replaced by the ${captured.length} notes you have open.`),
+        L("当前笔记组的 {length} 篇会被替换为正在打开的 {length2} 篇。", "The {length} saved notes will be replaced by the {length2} notes you have open.", { length: paths.length, length2: captured.length }),
         L("替换", "Replace"), () => store(captured)).open();
       else store(captured);
     }, "save"); return;
@@ -236,7 +235,7 @@ export function renderProductivity(parent: HTMLElement, plugin: QiaomuHomePlugin
     const presets = body.createDiv({ cls: "qh-focus-presets" }); presets.dataset.focusPresets = "true";
     presets.setAttr("role", "group"); presets.setAttr("aria-label", L("专注时长", "Session length"));
     for (const minutes of [15, 25, 45, 60]) {
-      const chip = presets.createEl("button", { cls: "qh-discovery-site", text: L(`${minutes} 分`, `${minutes}m`) });
+      const chip = presets.createEl("button", { cls: "qh-discovery-site", text: L("{minutes} 分", "{minutes}m", { minutes }) });
       chip.dataset.minutes = String(minutes);
       chip.addEventListener("click", () => {
         const previous = { ...plugin.settings.focusSession };
@@ -389,7 +388,7 @@ export function paintFocus(root: HTMLElement, plugin: QiaomuHomePlugin): void {
   const onBreak = session.kind === "break";
   root.querySelectorAll<HTMLElement>("[data-focus-clock]").forEach(el => el.setText(`${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`));
   root.querySelectorAll<HTMLElement>("[data-focus-status]").forEach(el => el.setText(remaining === 0 ? (onBreak ? L("休息结束", "Break over") : L("完成，休息一下", "Done — take a break"))
-    : running ? (onBreak ? L("休息中", "On a break") : L("专注中", "Focusing")) : paused ? L("已暂停", "Paused") : L(`${session.durationMinutes} 分钟`, `${session.durationMinutes} min`)));
+    : running ? (onBreak ? L("休息中", "On a break") : L("专注中", "Focusing")) : paused ? L("已暂停", "Paused") : L("{durationMinutes} 分钟", "{durationMinutes} min", { durationMinutes: session.durationMinutes })));
   root.querySelectorAll<HTMLElement>("[data-focus-label]").forEach(el => { el.setText(session.label && !onBreak && (running || paused) ? session.label : ""); el.toggleClass("is-hidden", !(session.label && !onBreak && (running || paused))); });
   root.querySelectorAll<HTMLSelectElement>("[data-focus-target]").forEach(el => { el.toggleClass("is-hidden", !idle && !(remaining === 0 && onBreak)); if (el.value !== session.label && [...el.options].some(option => option.value === session.label)) el.value = session.label; });
   const state = running ? "running" : remaining === 0 ? "done" : paused ? "paused" : "idle";
@@ -415,6 +414,6 @@ export function paintFocus(root: HTMLElement, plugin: QiaomuHomePlugin): void {
   root.querySelectorAll<HTMLElement>("[data-focus-reset]").forEach(el => el.toggleClass("is-hidden", idle));
   const stats = plugin.settings.focusStats, todayStats = stats.day === localDay() ? stats : { count: 0, minutes: 0 };
   root.querySelectorAll<HTMLElement>("[data-focus-today]").forEach(el => el.setText(todayStats.count
-    ? L(`今天已专注 ${todayStats.count} 次 · ${todayStats.minutes} 分钟`, `Today: ${todayStats.count} sessions · ${todayStats.minutes} min`)
+    ? L("今天已专注 {count} 次 · {minutes} 分钟", "Today: {count} sessions · {minutes} min", { count: todayStats.count, minutes: todayStats.minutes })
     : L("今天还没有完成专注", "No sessions finished today")));
 }

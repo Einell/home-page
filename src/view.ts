@@ -15,7 +15,7 @@ import { update, editorFor } from "./todo-files";
 import { addTodoBlock } from "./todo-ui";
 import { openFromHome } from "./open";
 import { renderGithubInbox } from "./github";
-import { isChinese } from "./i18n";
+import { L, dateLocale } from "./i18n";
 import { DragFeedback, dropAfter } from "./drag-feedback";
 import { editShortcutGroup, MoveShortcutModal, renderShortcutGroup } from "./shortcut-ui";
 import { shortcutModuleId } from "./shortcuts";
@@ -234,11 +234,20 @@ export class HomeView extends ItemView {
   render(): void {
     // A Home tab restored in the background has a view object but has not been opened (built) yet.
     if (!this.headEl) return;
+    this.relabel();
     this.renderHead();
     this.refreshContent();
     // Card-level saves rerender often; the wallpaper only repaints when its settings changed.
     const wallpaper = JSON.stringify(this.plugin.settings.wallpaper);
     if (wallpaper !== this.wallpaperSignature) void this.renderPhoto();
+  }
+
+  /** The search bar is built once to keep the query, focus and IME state; only its text follows the language. */
+  private relabel(): void {
+    this.inputEl.placeholder = t("search.placeholder");
+    this.inputEl.labels?.[0]?.querySelector(".qh-sr-only")?.setText(t("search.label"));
+    this.clearEl.querySelector(".qh-sr-only")?.setText(t("search.clear"));
+    (this.leaf as unknown as { updateHeader?(): void }).updateHeader?.();
   }
 
   focusSearch(): void {
@@ -275,14 +284,14 @@ export class HomeView extends ItemView {
     paintFocus(this.contentEl, this.plugin);
     const now = new Date();
     if (this.lastDay !== localDay(now)) { this.lastDay = localDay(now); this.requestRefresh(); }
-    const minute = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    const minute = now.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: false });
     if (minute === this.lastMinute) return;
     this.lastMinute = minute;
     this.catchUp();
     this.contentEl.querySelectorAll(".qh-card[data-tick]").forEach(card => card.dispatchEvent(new Event("qh-minute")));
     if (!this.timeEl || !this.subEl) return;
     this.timeEl.setText(minute);
-    const date = now.toLocaleDateString([], { month: "long", day: "numeric", weekday: "long" });
+    const date = now.toLocaleDateString(dateLocale(), { month: "long", day: "numeric", weekday: "long" });
     this.subEl.setText(`${greeting(now.getHours())} · ${date}`);
   }
 
@@ -521,7 +530,7 @@ export class HomeView extends ItemView {
     }
     // The web: the first site highlighted on the Multi-search card, so the top box and the card agree.
     const web = this.webSite();
-    if (web) this.addRow(commands, { icon: "globe", title: isChinese() ? `用 ${web.zh} 搜索「${query}」` : `Search ${web.en} for “${query}”`,
+    if (web) this.addRow(commands, { icon: "globe", title: L("用 {zh} 搜索「{query}」", "Search {en} for “{query}”", { en: web.en, query, zh: web.zh }),
       run: () => { window.open(discoveryUrl(web, query), "_blank", "noopener,noreferrer"); } });
     this.setActiveRow(0);
   }
@@ -697,12 +706,12 @@ export class HomeView extends ItemView {
       const menu = new Menu();
       if (id.startsWith("shortcut:")) {
         const groupId = id.slice("shortcut:".length);
-        menu.addItem((item) => item.setTitle(isChinese() ? "管理入口" : "Manage shortcuts").setIcon("list-filter").onClick(() => this.editLayout(pageId)));
+        menu.addItem((item) => item.setTitle(L("管理入口", "Manage shortcuts")).setIcon("list-filter").onClick(() => this.editLayout(pageId)));
         menu.addItem((item) => item.setTitle(t("shortcut.renameGroup")).setIcon("pencil").onClick(() => editShortcutGroup(this.plugin, pageId, groupId)));
         menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveShortcutModal(this.plugin, pageId, groupId).open()));
         menu.addSeparator();
       } else if (id !== "recommendations") {
-        menu.addItem((item) => item.setTitle(isChinese() ? "组件设置" : "Card settings")
+        menu.addItem((item) => item.setTitle(L("组件设置", "Card settings"))
           .setIcon("settings-2").onClick(() => new ModuleOptionsModal(this.plugin, pageId, id, name).open()));
         menu.addItem((item) => item.setTitle(t("layout.move")).setIcon("panels-top-left").onClick(() => new MoveModuleModal(this.plugin, pageId, id).open()));
         menu.addSeparator();
@@ -859,7 +868,7 @@ export class HomeView extends ItemView {
     const edit = tools.createEl("button", { cls: this.editing ? "qh-layout-action" : "qh-icon-button qh-layout-button" });
     setIcon(edit.createSpan(), this.editing ? "check" : "settings");
     if (this.editing) edit.createSpan({ text: t("layout.done") });
-    else hiddenLabel(edit, isChinese() ? "布置主页" : "Customize Home");
+    else hiddenLabel(edit, L("布置主页", "Customize Home"));
     edit.setAttr("aria-pressed", String(this.editing));
     edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.shortcutDragging = false; this.dragFeedback.clear(); this.refreshContent(); });
   }
@@ -904,13 +913,13 @@ export class HomeView extends ItemView {
         else this.renderUnavailable(next, item);
       }
       for (const id of Object.keys(PRODUCTIVITY_MODULES) as ProductivityId[]) {
-        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderProductivity(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, isChinese() ? PRODUCTIVITY_MODULES[id].zh : PRODUCTIVITY_MODULES[id].en).open());
+        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderProductivity(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, L(PRODUCTIVITY_MODULES[id].zh, PRODUCTIVITY_MODULES[id].en)).open());
       }
       for (const id of Object.keys(EXTRA_MODULES) as ExtraId[]) {
-        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderExtra(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, isChinese() ? EXTRA_MODULES[id].zh : EXTRA_MODULES[id].en).open());
+        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderExtra(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, L(EXTRA_MODULES[id].zh, EXTRA_MODULES[id].en)).open());
       }
       for (const id of Object.keys(INTEGRATIONS) as IntegrationId[]) {
-        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderIntegration(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, isChinese() ? INTEGRATIONS[id].zh : INTEGRATIONS[id].en).open());
+        if (moduleOptions(this.plugin.settings, id, page.id).visible) renderIntegration(next, this.plugin, id, page.id, () => new ModuleOptionsModal(this.plugin, page.id, id, L(INTEGRATIONS[id].zh, INTEGRATIONS[id].en)).open());
       }
       if (moduleOptions(this.plugin.settings, "todo", page.id).visible) renderTodo(next, this.plugin, moduleOptions(this.plugin.settings, "todo", page.id).limit);
       if (moduleOptions(this.plugin.settings, "daily-preview", page.id).visible) this.renderDailyPreview(next, page.id);
@@ -1036,7 +1045,7 @@ export class HomeView extends ItemView {
       row.addEventListener("contextmenu", event => showMenu(event));
       const more = row.createEl("button", { cls: "qh-icon-button qh-item-menu" });
       setIcon(more, "ellipsis");
-      hiddenLabel(more, isChinese() ? `笔记选项：${item.title}` : `Note options: ${item.title}`);
+      hiddenLabel(more, L("笔记选项：{title}", "Note options: {title}", { title: item.title }));
       more.setAttr("aria-haspopup", "menu");
       more.addEventListener("click", event => showMenu(event, more));
       more.addEventListener("keydown", event => event.stopPropagation());
@@ -1080,10 +1089,10 @@ export class HomeView extends ItemView {
       }, {
         open: (event) => this.openNote(card, file.path, event),
         menu: (menu) => {
-          menu.addItem((item) => item.setTitle(isChinese() ? "在新标签页打开" : "Open in new tab").setIcon("file-plus").onClick(() => this.openPath(file.path, true)));
-          menu.addItem((item) => item.setTitle(isPinned ? (isChinese() ? "取消置顶" : "Unpin") : (isChinese() ? "置顶" : "Pin to top")).setIcon(isPinned ? "pin-off" : "pin")
+          menu.addItem((item) => item.setTitle(L("在新标签页打开", "Open in new tab")).setIcon("file-plus").onClick(() => this.openPath(file.path, true)));
+          menu.addItem((item) => item.setTitle(isPinned ? (L("取消置顶", "Unpin")) : (L("置顶", "Pin to top"))).setIcon(isPinned ? "pin-off" : "pin")
             .onClick(() => save(() => { settings.recentPinned = isPinned ? pinned.filter((path) => path !== file.path) : [...pinned, file.path].slice(-20); })));
-          if (!isPinned) menu.addItem((item) => item.setTitle(isChinese() ? "从列表移除" : "Remove from list").setIcon("eye-off")
+          if (!isPinned) menu.addItem((item) => item.setTitle(L("从列表移除", "Remove from list")).setIcon("eye-off")
             .onClick(() => save(() => { settings.recentHidden = [...settings.recentHidden.filter((path) => path !== file.path), file.path].slice(-200); })));
         },
       });
@@ -1101,15 +1110,15 @@ export class HomeView extends ItemView {
   }
 
   private renderDailyPreview(parent: HTMLElement, pageId: string): void {
-    const card = this.nativeCard(parent, "daily-preview", isChinese() ? "今日日记" : "Today's note", "calendar-days");
+    const card = this.nativeCard(parent, "daily-preview", L("今日日记", "Today's note"), "calendar-days");
     const body = card.createDiv({ cls: "qh-native-preview" });
-    body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "正在读取…" : "Loading…" });
+    body.createDiv({ cls: "qh-card-empty", text: L("正在读取…", "Loading…") });
     // Without the core plugin, the action leads to where it can be turned on instead of a disabled button.
     if (commandExists(this.app, "daily-notes")) {
-      const action = cardAction(card, isChinese() ? "打开今日日记" : "Open today's note", () => {}, "arrow-up-right");
+      const action = cardAction(card, L("打开今日日记", "Open today's note"), () => {}, "arrow-up-right");
       bindOpen(action, (event) => void ensureTodayNote(this.app).then((file) => openFromHome(this.plugin, card, file, event))
         .catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))));
-    } else cardAction(card, isChinese() ? "启用日记核心插件" : "Turn on Daily notes", () => {
+    } else cardAction(card, L("启用日记核心插件", "Turn on Daily notes"), () => {
       const setting = (this.app as unknown as { setting?: { open?(): void; openTabById?(id: string): void } }).setting;
       setting?.open?.(); setting?.openTabById?.("plugins");
     }, "power", true);
@@ -1120,7 +1129,7 @@ export class HomeView extends ItemView {
       const all = excerptLines(content, Number.POSITIVE_INFINITY);
       if (!card.isConnected) return;
       body.empty();
-      if (!all.length) { body.createDiv({ cls: "qh-card-empty", text: file ? (isChinese() ? "今日日记还没有正文" : "Today's note is empty") : (isChinese() ? "今天还没有日记" : "No daily note yet") }); return; }
+      if (!all.length) { body.createDiv({ cls: "qh-card-empty", text: file ? (L("今日日记还没有正文", "Today's note is empty")) : (L("今天还没有日记", "No daily note yet")) }); return; }
       const rows = content.split("\n");
       for (const entry of all.slice(0, limit)) {
         const line = body.createDiv({ cls: "qh-native-line qh-native-link" });
@@ -1137,7 +1146,7 @@ export class HomeView extends ItemView {
               : (current: string) => reopenTodo(current, item.raw, item.raw.replace(/\[[xX]\]/, "[ ]"));
             void update(this.app, file, write).catch(() => {
               box.checked = !box.checked;
-              new Notice(isChinese() ? "这一行已被修改，请刷新后再试" : "This line changed; refresh and try again");
+              new Notice(L("这一行已被修改，请刷新后再试", "This line changed; refresh and try again"));
             }).finally(() => { box.disabled = false; });
           });
           line.toggleClass("is-done", entry.task === "done");
@@ -1149,11 +1158,11 @@ export class HomeView extends ItemView {
         bindOpen(line, (event) => this.openNote(card, path, event, entry.line));
         line.addEventListener("keydown", (event) => { if (event.key === "Enter") this.openNote(card, path, event, entry.line); });
       }
-      if (all.length > limit) body.createDiv({ cls: "qh-native-scope", text: isChinese() ? `还有 ${all.length - limit} 行` : `${all.length - limit} more lines` });
+      if (all.length > limit) body.createDiv({ cls: "qh-native-scope", text: L("还有 {v} 行", "{v} more lines", { v: all.length - limit }) });
     }).catch(() => {
       if (!card.isConnected) return;
       body.empty();
-      body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "无法读取日记设置" : "Daily note settings unavailable" });
+      body.createDiv({ cls: "qh-card-empty", text: L("无法读取日记设置", "Daily note settings unavailable") });
     });
   }
 
@@ -1165,14 +1174,14 @@ export class HomeView extends ItemView {
   }
 
   private renderRecentlyModified(parent: HTMLElement, pageId: string): void {
-    const card = this.nativeCard(parent, "recently-modified", isChinese() ? "最近修改" : "Recently modified", "file-clock");
+    const card = this.nativeCard(parent, "recently-modified", L("最近修改", "Recently modified"), "file-clock");
     const options = moduleOptions(this.plugin.settings, "recently-modified", pageId);
     if (options.folder) card.createDiv({ cls: "qh-native-scope", text: options.folder });
     const list = card.createDiv({ cls: "qh-list" });
     void (options.excludeDaily === false ? Promise.resolve(undefined) : this.homeNoteFilter()).then((exclude) => {
       if (!card.isConnected) return;
       const files = recentlyModified(this.app, options.limit, options.folder, exclude);
-      if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "还没有 Markdown 笔记" : "No Markdown notes yet" }); return; }
+      if (!files.length) { card.createDiv({ cls: "qh-card-empty", text: L("还没有 Markdown 笔记", "No Markdown notes yet") }); return; }
       for (const file of files) this.renderItem(list, { id: file.path, title: file.basename, icon: "file-text",
         subtitle: file.parent && !file.parent.isRoot() ? file.parent.path : "", meta: relativeTime(file.stat.mtime), open: () => {} },
       { open: (event) => this.openNote(card, file.path, event) });
@@ -1180,7 +1189,7 @@ export class HomeView extends ItemView {
   }
 
   private renderReviewNote(parent: HTMLElement): void {
-    const card = this.nativeCard(parent, "review-note", isChinese() ? "回顾一篇" : "Review a note", "shuffle");
+    const card = this.nativeCard(parent, "review-note", L("回顾一篇", "Review a note"), "shuffle");
     const settings = this.plugin.settings;
     if (settings.reviewFolder) card.createDiv({ cls: "qh-native-scope", text: settings.reviewFolder });
     const list = card.createDiv({ cls: "qh-list" });
@@ -1191,8 +1200,8 @@ export class HomeView extends ItemView {
       const excluded = new Set(settings.reviewExcluded);
       const candidates = reviewCandidates(this.app, settings.reviewFolder, (path) => excluded.has(path) || daily(path));
       if (!candidates.length) {
-        card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "所选范围里没有可回顾的笔记" : "No notes to review in this scope" });
-        cardAction(card, isChinese() ? "更换范围" : "Change folder", () => new ModuleOptionsModal(this.plugin, currentPage(settings).id, "review-note", isChinese() ? "回顾一篇" : "Review a note").open(), "folder", true);
+        card.createDiv({ cls: "qh-card-empty", text: L("所选范围里没有可回顾的笔记", "No notes to review in this scope") });
+        cardAction(card, L("更换范围", "Change folder"), () => new ModuleOptionsModal(this.plugin, currentPage(settings).id, "review-note", L("回顾一篇", "Review a note")).open(), "folder", true);
         return;
       }
       let current = this.reviewSelection?.folder === settings.reviewFolder
@@ -1214,9 +1223,9 @@ export class HomeView extends ItemView {
         }).catch(() => {});
       };
       choose(false);
-      cardAction(actions, isChinese() ? "换一篇" : "Another note", () => choose(true), "shuffle");
-      cardAction(actions, isChinese() ? "已回顾" : "Reviewed", () => { if (current) seen(current.path); choose(true); }, "check");
-      cardAction(actions, isChinese() ? "不再出现" : "Never show", () => {
+      cardAction(actions, L("换一篇", "Another note"), () => choose(true), "shuffle");
+      cardAction(actions, L("已回顾", "Reviewed"), () => { if (current) seen(current.path); choose(true); }, "check");
+      cardAction(actions, L("不再出现", "Never show"), () => {
         if (!current) return;
         const path = current.path;
         mark(() => { settings.reviewExcluded = [...settings.reviewExcluded, path].slice(-500); });
@@ -1228,13 +1237,13 @@ export class HomeView extends ItemView {
   }
 
   private renderInboxPreview(parent: HTMLElement, pageId: string): void {
-    const card = this.nativeCard(parent, "inbox-preview", isChinese() ? "收件箱" : "Inbox", "inbox");
+    const card = this.nativeCard(parent, "inbox-preview", L("收件箱", "Inbox"), "inbox");
     const path = this.plugin.settings.captureInboxPath;
     const file = this.app.vault.getAbstractFileByPath(path);
     const body = card.createDiv({ cls: "qh-native-preview" });
     if (!(file instanceof TFile)) {
-      body.createDiv({ cls: "qh-card-empty", text: isChinese() ? `还没有收件箱笔记（${path}）。将快速记录的目标设为收件箱，记下的内容会出现在这里。` : `No Inbox note yet (${path}). Set Quick capture to Inbox to collect entries here.` });
-      cardAction(card, isChinese() ? "创建收件箱" : "Create Inbox", () => void (async () => {
+      body.createDiv({ cls: "qh-card-empty", text: L("还没有收件箱笔记（{path}）。将快速记录的目标设为收件箱，记下的内容会出现在这里。", "No Inbox note yet ({path}). Set Quick capture to Inbox to collect entries here.", { path }) });
+      cardAction(card, L("创建收件箱", "Create Inbox"), () => void (async () => {
         await ensureParent(this.app, path);
         if (!this.app.vault.getAbstractFileByPath(path)) await this.app.vault.create(path, "");
       })().catch((error: unknown) => new Notice(error instanceof Error ? error.message : String(error))), "plus", true);
@@ -1242,8 +1251,8 @@ export class HomeView extends ItemView {
     }
     const head = card.querySelector<HTMLElement>(".qh-card-head")!;
     const count = head.createSpan({ cls: "qh-card-count" });
-    body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "正在读取…" : "Loading…" });
-    const undoLabels = { undo: isChinese() ? "撤销" : "Undo", failed: isChinese() ? "无法撤销：收件箱已被修改" : "Could not undo: the Inbox changed" };
+    body.createDiv({ cls: "qh-card-empty", text: L("正在读取…", "Loading…") });
+    const undoLabels = { undo: L("撤销", "Undo"), failed: L("无法撤销：收件箱已被修改", "Could not undo: the Inbox changed") };
     void Promise.resolve(editorFor(this.app, file)?.getValue() ?? this.app.vault.cachedRead(file)).then((markdown) => {
       if (!card.isConnected) return;
       body.empty();
@@ -1253,7 +1262,7 @@ export class HomeView extends ItemView {
         // Notes written before list items were used still show their last lines.
         const lines = dailyExcerpt(markdown.split(/\r?\n/).slice(-500).join("\n"), 500).slice(-moduleOptions(this.plugin.settings, "inbox-preview", pageId).limit);
         if (lines.length) for (const line of lines) body.createDiv({ cls: "qh-native-line", text: line });
-        else body.createDiv({ cls: "qh-card-empty", text: isChinese() ? "收件箱是空的" : "Inbox is empty" });
+        else body.createDiv({ cls: "qh-card-empty", text: L("收件箱是空的", "Inbox is empty") });
         return;
       }
       // Newest first: captures are appended to the end of the note.
@@ -1270,30 +1279,30 @@ export class HomeView extends ItemView {
             button.disabled = true;
             void run().catch((error: unknown) => {
               button.disabled = false;
-              new Notice(error instanceof Error && error.message !== "Item changed" ? error.message : (isChinese() ? "这条内容已被修改，请刷新后再试" : "This item changed; refresh and try again"));
+              new Notice(error instanceof Error && error.message !== "Item changed" ? error.message : (L("这条内容已被修改，请刷新后再试", "This item changed; refresh and try again")));
             });
           });
         };
-        tool("list-plus", isChinese() ? "转为待办" : "Move to tasks", async () => {
+        tool("list-plus", L("转为待办", "Move to tasks"), async () => {
           await update(this.app, file, (current) => removeInboxItem(current, item));
           const [first, ...rest] = item.raw.split("\n");
           const block = [`- [ ] ${first.replace(/^[-*+]\s+(?:\[[ xX]\]\s+)?/, "").replace(/\r$/, "")}`, ...rest].join("\n");
           try { await addTodoBlock(this.plugin, block); }
           catch (error) { await update(this.app, file, (current) => restoreInboxItem(current, item)); throw error; }
-          new Notice(isChinese() ? "已移到今日待办" : "Moved to today's tasks");
+          new Notice(L("已移到今日待办", "Moved to today's tasks"));
         });
-        tool("trash-2", isChinese() ? "删除" : "Delete", async () => {
+        tool("trash-2", L("删除", "Delete"), async () => {
           await update(this.app, file, (current) => removeInboxItem(current, item));
-          undoNotice(isChinese() ? "已从收件箱删除" : "Removed from Inbox", () => update(this.app, file, (current) => restoreInboxItem(current, item)), undoLabels);
+          undoNotice(L("已从收件箱删除", "Removed from Inbox"), () => update(this.app, file, (current) => restoreInboxItem(current, item)), undoLabels);
         });
       }
-    }).catch(() => { if (card.isConnected) body.setText(isChinese() ? "无法读取收件箱" : "Could not read Inbox"); });
-    const open = cardAction(card, isChinese() ? "打开收件箱" : "Open Inbox", () => {}, "arrow-up-right");
+    }).catch(() => { if (card.isConnected) body.setText(L("无法读取收件箱", "Could not read Inbox")); });
+    const open = cardAction(card, L("打开收件箱", "Open Inbox"), () => {}, "arrow-up-right");
     bindOpen(open, (event) => this.openNote(card, path, event));
   }
 
   private renderDailyFocus(parent: HTMLElement): void {
-    const card = this.nativeCard(parent, "daily-focus", isChinese() ? "今日重点" : "Today's focus", "target");
+    const card = this.nativeCard(parent, "daily-focus", L("今日重点", "Today's focus"), "target");
     const list = card.createDiv({ cls: "qh-focus-list" });
     let items: FocusItem[] = [];
     const draftKey = `${currentPage(this.plugin.settings).id}:${localDay()}`;
@@ -1304,14 +1313,14 @@ export class HomeView extends ItemView {
       try { await writeFocus(this.plugin, next); items = next; committed?.(); }
       catch (error) {
         new Notice(error instanceof Error && error.message === "Focus property changed"
-          ? (isChinese() ? "今日日记里的 focus 属性不是文字，已保留原值" : "The focus property in today's note is not text; it was left unchanged")
+          ? (L("今日日记里的 focus 属性不是文字，已保留原值", "The focus property in today's note is not text; it was left unchanged"))
           : error instanceof Error ? error.message : t("layout.saveFailed"));
       } finally { this.focusSaving = false; addFocus.disabled = false; this.requestRefresh(); }
     };
     // The field is built right away so a refresh can hand focus back to it while the list loads.
     const { input, row: field, submit: addFocus } = fieldRow(card, {
-      placeholder: isChinese() ? "今天最重要的一件事" : "One important thing today",
-      label: isChinese() ? "今日重点" : "Today's focus", icon: "plus", action: isChinese() ? "添加重点" : "Add focus", onSubmit: () => {
+      placeholder: L("今天最重要的一件事", "One important thing today"),
+      label: L("今日重点", "Today's focus"), icon: "plus", action: L("添加重点", "Add focus"), onSubmit: () => {
         const text = input.value.trim();
         if (!text) { input.focus(); return; }
         if (items.some((item) => item.text === text)) { input.value = ""; this.dailyFocusDrafts.delete(draftKey); return; }
@@ -1332,7 +1341,7 @@ export class HomeView extends ItemView {
       addFocus.disabled = this.focusSaving;
       if (state.invalid) {
         field.hide();
-        list.createDiv({ cls: "qh-card-empty", text: isChinese() ? "今日日记的 focus 属性不是文字，已保留原值。" : "The focus property in today's note is not text; it was left unchanged." });
+        list.createDiv({ cls: "qh-card-empty", text: L("今日日记的 focus 属性不是文字，已保留原值。", "The focus property in today's note is not text; it was left unchanged.") });
         return;
       }
       for (const [index, item] of items.entries()) {
@@ -1344,64 +1353,64 @@ export class HomeView extends ItemView {
         done.addEventListener("change", () => { label.toggleClass("is-done", done.checked); void save(items.map((entry, at) => at === index ? { ...entry, done: done.checked } : entry)); });
         const tools = row.createDiv({ cls: "qh-inbox-tools" });
         const todo = tools.createEl("button", { cls: "qh-icon-button" });
-        setIcon(todo, "list-plus"); hiddenLabel(todo, isChinese() ? "加入今日待办" : "Add to today's tasks");
+        setIcon(todo, "list-plus"); hiddenLabel(todo, L("加入今日待办", "Add to today's tasks"));
         todo.addEventListener("click", () => {
           todo.disabled = true;
-          void addTodoBlock(this.plugin, `- [ ] ${item.text}`).then(() => new Notice(isChinese() ? "已加入今日待办" : "Added to today's tasks"))
+          void addTodoBlock(this.plugin, `- [ ] ${item.text}`).then(() => new Notice(L("已加入今日待办", "Added to today's tasks")))
             .catch((error: unknown) => { todo.disabled = false; new Notice(error instanceof Error ? error.message : t("layout.saveFailed")); });
         });
         const remove = tools.createEl("button", { cls: "qh-icon-button" });
-        setIcon(remove, "x"); hiddenLabel(remove, isChinese() ? "移除" : "Remove");
+        setIcon(remove, "x"); hiddenLabel(remove, L("移除", "Remove"));
         remove.addEventListener("click", () => void save(items.filter((_, at) => at !== index)));
       }
       if (!items.length && state.yesterday.length) {
         const carry = list.createDiv({ cls: "qh-focus-yesterday" });
-        carry.createDiv({ cls: "qh-native-scope", text: isChinese() ? "昨天的重点还没完成" : "Unfinished from yesterday" });
+        carry.createDiv({ cls: "qh-native-scope", text: L("昨天的重点还没完成", "Unfinished from yesterday") });
         for (const item of state.yesterday) {
           const row = carry.createDiv({ cls: "qh-focus-item" });
           row.createSpan({ cls: "qh-native-line", text: item.text });
-          cardAction(row, isChinese() ? "继续" : "Continue", () => void save([...items, { text: item.text, done: false }].slice(0, MAX_FOCUS)), "corner-down-right");
+          cardAction(row, L("继续", "Continue"), () => void save([...items, { text: item.text, done: false }].slice(0, MAX_FOCUS)), "corner-down-right");
         }
       }
       if (items.length >= MAX_FOCUS) field.hide();
-      else if (items.length) input.placeholder = isChinese() ? `再加一件（最多 ${MAX_FOCUS} 件）` : `Add another (up to ${MAX_FOCUS})`;
+      else if (items.length) input.placeholder = L("再加一件（最多 {MAX_FOCUS} 件）", "Add another (up to {MAX_FOCUS})", { MAX_FOCUS });
       if (!items.length && !state.yesterday.length) note.setText(state.stored === "note"
-        ? (isChinese() ? "记在今日日记的 focus 属性里" : "Saved in today's note as the focus property")
-        : (isChinese() ? "启用日记核心插件后会记进日记" : "Turn on Daily notes to keep focus in your notes"));
-    }).catch(() => { if (card.isConnected) list.createDiv({ cls: "qh-card-empty", text: isChinese() ? "无法读取今日日记" : "Could not read today's note" }); });
+        ? (L("记在今日日记的 focus 属性里", "Saved in today's note as the focus property"))
+        : (L("启用日记核心插件后会记进日记", "Turn on Daily notes to keep focus in your notes")));
+    }).catch(() => { if (card.isConnected) list.createDiv({ cls: "qh-card-empty", text: L("无法读取今日日记", "Could not read today's note") }); });
   }
 
   private renderCountdown(parent: HTMLElement): void {
-    const card = this.nativeCard(parent, "countdown", isChinese() ? "倒计时" : "Countdown", "calendar-clock");
+    const card = this.nativeCard(parent, "countdown", L("倒计时", "Countdown"), "calendar-clock");
     const data = this.plugin.settings.countdown;
     if (data.date) {
       const target = new Date(`${data.date}T00:00:00`);
       const days = Math.round((target.getTime() - new Date(`${localDay()}T00:00:00`).getTime()) / 86400000);
       const hero = card.createDiv({ cls: "qh-countdown" });
-      hero.createDiv({ cls: "qh-countdown-label", text: data.label || (isChinese() ? "目标日" : "Target day") });
+      hero.createDiv({ cls: "qh-countdown-label", text: data.label || (L("目标日", "Target day")) });
       const figure = hero.createDiv({ cls: "qh-countdown-figure" });
-      if (days === 0) figure.createSpan({ cls: "qh-countdown-number", text: isChinese() ? "就是今天" : "Today" });
+      if (days === 0) figure.createSpan({ cls: "qh-countdown-number", text: L("就是今天", "Today") });
       else {
-        figure.createSpan({ cls: "qh-countdown-prefix", text: days > 0 ? (isChinese() ? "还有" : "") : (isChinese() ? "已过去" : "") });
+        figure.createSpan({ cls: "qh-countdown-prefix", text: days > 0 ? (L("还有", "")) : (L("已过去", "")) });
         figure.createSpan({ cls: "qh-countdown-number", text: String(Math.abs(days)) });
-        figure.createSpan({ cls: "qh-countdown-unit", text: isChinese() ? "天" : Math.abs(days) === 1 ? (days > 0 ? "day left" : "day ago") : (days > 0 ? "days left" : "days ago") });
+        figure.createSpan({ cls: "qh-countdown-unit", text: L("天", Math.abs(days) === 1 ? (days > 0 ? "day left" : "day ago") : (days > 0 ? "days left" : "days ago")) });
       }
-      hero.createDiv({ cls: "qh-countdown-date", text: target.toLocaleDateString(isChinese() ? "zh-CN" : undefined, { year: "numeric", month: "long", day: "numeric", weekday: "short" }) });
+      hero.createDiv({ cls: "qh-countdown-date", text: target.toLocaleDateString(dateLocale(), { year: "numeric", month: "long", day: "numeric", weekday: "short" }) });
       hero.toggleClass("is-past", days < 0);
-    } else card.createDiv({ cls: "qh-card-empty", text: isChinese() ? "设置一个值得期待的日期" : "Choose a date to look forward to" });
-    cardAction(card, data.date ? (isChinese() ? "更改日期" : "Change date") : (isChinese() ? "设置日期" : "Set date"),
-      () => new ModuleOptionsModal(this.plugin, currentPage(this.plugin.settings).id, "countdown", isChinese() ? "倒计时" : "Countdown").open(), "calendar", !data.date);
+    } else card.createDiv({ cls: "qh-card-empty", text: L("设置一个值得期待的日期", "Choose a date to look forward to") });
+    cardAction(card, data.date ? (L("更改日期", "Change date")) : (L("设置日期", "Set date")),
+      () => new ModuleOptionsModal(this.plugin, currentPage(this.plugin.settings).id, "countdown", L("倒计时", "Countdown")).open(), "calendar", !data.date);
   }
 
   private renderDiscovery(parent: HTMLElement, id: DiscoveryModuleId): void {
     const base = DISCOVERY_MODULES[id];
     const config = { ...base, sites: [...base.sites, ...(id === "multi-search" ? customSearchSites(moduleOptions(this.plugin.settings, id).customSites ?? []) : [])] };
-    const card = this.nativeCard(parent, id, isChinese() ? config.zh : config.en, config.icon);
+    const card = this.nativeCard(parent, id, L(config.zh, config.en), config.icon);
     if (id === "dev-inbox") renderGithubInbox(card, this.plugin, moduleOptions(this.plugin.settings, id).limit);
     const withSearch = config.sites.some((site) => site.search);
     let submit = () => {};
-    const input = withSearch ? fieldRow(card, { type: "search", placeholder: isChinese() ? "输入关键词，回车搜索" : "Search, then press Enter",
-      label: isChinese() ? `${config.zh}关键词` : `${config.en} query`, icon: "search", action: isChinese() ? "搜索" : "Search", onSubmit: () => submit() }).input : null;
+    const input = withSearch ? fieldRow(card, { type: "search", placeholder: L("输入关键词，回车搜索", "Search, then press Enter"),
+      label: L("{zh}关键词", "{en} query", { en: config.en, zh: config.zh }), icon: "search", action: L("搜索", "Search"), onSubmit: () => submit() }).input : null;
     if (input) {
       const key = `${currentPage(this.plugin.settings).id}:${id}`;
       input.value = this.discoveryDrafts.get(key) ?? "";
@@ -1416,7 +1425,7 @@ export class HomeView extends ItemView {
     for (const site of shown) {
       const button = sites.createEl("button", { cls: "qh-discovery-site" });
       setIcon(button.createSpan(), site.icon);
-      button.createSpan({ text: isChinese() ? site.zh : site.en });
+      button.createSpan({ text: L(site.zh, site.en) });
       if (id === "multi-search") { button.setAttr("aria-pressed", String(selected.has(site.id))); button.addEventListener("click", () => {
         if (selected.has(site.id)) selected.delete(site.id); else selected.add(site.id);
         button.setAttr("aria-pressed", String(selected.has(site.id)));
@@ -1432,19 +1441,19 @@ export class HomeView extends ItemView {
       const run = () => {
         if (!input?.value.trim()) { input?.focus(); return; }
         const chosen = config.sites.filter((site) => selected.has(site.id));
-        if (!chosen.length) { new Notice(isChinese() ? "请至少选择一个网站" : "Choose at least one website"); return; }
+        if (!chosen.length) { new Notice(L("请至少选择一个网站", "Choose at least one website")); return; }
         for (const site of openAll ? chosen : chosen.slice(0, 1)) open(discoveryUrl(site, input.value));
       };
       submit = run;
       card.createDiv({ cls: "qh-native-scope", text: openAll
-        ? (isChinese() ? "点亮的网站会同时打开" : "Highlighted sites open together")
-        : (isChinese() ? "回车用第一个点亮的网站搜索" : "Enter searches the first highlighted site") });
+        ? (L("点亮的网站会同时打开", "Highlighted sites open together"))
+        : (L("回车用第一个点亮的网站搜索", "Enter searches the first highlighted site")) });
     } else if (input) {
       const first = shown.find((site) => site.search) ?? config.sites.find((site) => site.search)!;
       submit = () => { if (!input.value.trim()) { input.focus(); return; } open(discoveryUrl(first, input.value)); };
-      card.createDiv({ cls: "qh-native-scope", text: isChinese() ? `回车用「${first.zh}」搜索，或点选其他来源` : `Enter searches ${first.en}, or pick a source` });
+      card.createDiv({ cls: "qh-native-scope", text: L("回车用「{zh}」搜索，或点选其他来源", "Enter searches {en}, or pick a source", { en: first.en, zh: first.zh }) });
     } else if (id === "ai-learning") {
-      card.createDiv({ cls: "qh-native-scope", text: isChinese() ? "课程和学习进度保留在原网站" : "Courses and progress stay at the source" });
+      card.createDiv({ cls: "qh-native-scope", text: L("课程和学习进度保留在原网站", "Courses and progress stay at the source") });
     }
   }
 

@@ -5,6 +5,7 @@ import { commandExists } from './ecosystem';
 import { editorFor, update } from './todo-files';
 import { carryTasks, carrySource, carryBlock, underHeading, type CarryTask } from './todo-data';
 import { isChinese } from './i18n';
+// Headings are written into notes and matched when reading them back (TODAY_HEADINGS / CARRY_HEADINGS), so only Chinese and English are used.
 export const todayHeading = (): string => isChinese() ? '今日待办' : 'Today';
 export const carryHeading = (): string => isChinese() ? '昨日未完成' : 'Carried over';
 export interface CarryGroup { file: TFile; snapshot: string; tasks: CarryTask[] }
