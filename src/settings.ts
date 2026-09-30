@@ -46,6 +46,9 @@ export interface ModuleOptions {
   includeOverdue?: boolean;
   /** Multi-search: Enter opens every highlighted site (true) or only the first (false). Unset means true. */
   openAll?: boolean;
+  /** Pixel size chosen by dragging a card edge. Unset keeps the automatic layout. */
+  w?: number;
+  h?: number;
 }
 export const DEFAULT_MODULE_OPTIONS: ModuleOptions = { visible: true, limit: 3 };
 
@@ -310,6 +313,8 @@ function normalizeModules(value: unknown): Record<string, ModuleOptions> {
       ...(typeof candidate.excludeDaily === "boolean" ? { excludeDaily: candidate.excludeDaily } : {}),
       ...(typeof candidate.includeOverdue === "boolean" ? { includeOverdue: candidate.includeOverdue } : {}),
       ...(typeof candidate.openAll === "boolean" ? { openAll: candidate.openAll } : {}),
+      ...(typeof candidate.w === "number" && Number.isFinite(candidate.w) && candidate.w >= 180 && candidate.w <= 2400 ? { w: Math.round(candidate.w) } : {}),
+      ...(typeof candidate.h === "number" && Number.isFinite(candidate.h) && candidate.h >= 100 && candidate.h <= 1600 ? { h: Math.round(candidate.h) } : {}),
       visible: typeof candidate.visible === "boolean" ? candidate.visible : true,
       limit: typeof candidate.limit === "number" && Number.isFinite(candidate.limit)
         ? Math.min(6, Math.max(1, Math.floor(candidate.limit))) : 3,

@@ -105,6 +105,8 @@ export class HomeView extends ItemView {
   private movedShortcut: string | null = null;
   markMovedShortcut(id: string): void { this.movedShortcut = id; }
   private dragging: { kind: "card" | "page"; id: string; pageId: string } | null = null;
+  private resizing = false;
+  private resizeHintShown = false;
   private readonly pageInstance = `qh-pages-${crypto.randomUUID()}`;
   private reviewSelection: { folder: string; path: string } | null = null;
   private connections: unknown[] = [];
@@ -696,9 +698,155 @@ export class HomeView extends ItemView {
     menu.showAtMouseEvent(event);
   }
 
+  private applyCardSize(card: HTMLElement, id: string, pageId: string): void {
+    const options = moduleOptions(this.plugin.settings, id, pageId);
+    const width = Number(options.w);
+    const height = Number(options.h);
+    if (Number.isFinite(width) && width >= 180) {
+      card.style.setProperty("--qh-w", `${Math.round(width)}px`);
+      card.addClass("qh-sized-w");
+    } else {
+      card.style.removeProperty("--qh-w");
+      card.removeClass("qh-sized-w");
+    }
+    if (Number.isFinite(height) && height >= 100) {
+      card.style.setProperty("--qh-h", `${Math.round(height)}px`);
+      card.addClass("qh-sized-h");
+    } else {
+      card.style.removeProperty("--qh-h");
+      card.removeClass("qh-sized-h");
+    }
+  }
+
+  /** Which edge the pointer is near. Empty when the pointer is over a control or the card body. */
+  private cardResizeDirection(card: HTMLElement, event: MouseEvent): string {
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("button, a, input, textarea, select, label, .qh-item, .qh-shortcut-link, .qh-todo-row, .qh-native-line")) return "";
+    const rect = card.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    const edge = 16;
+    const left = x <= edge;
+    const right = x >= rect.width - edge;
+    const top = y <= edge;
+    const bottom = y >= rect.height - edge;
+    let horizontal = "";
+    if (left && right) horizontal = x < rect.width / 2 ? "w" : "e";
+    else if (left) horizontal = "w";
+    else if (right) horizontal = "e";
+    let vertical = "";
+    if (top && bottom) vertical = y < rect.height / 2 ? "n" : "s";
+    else if (top) vertical = "n";
+    else if (bottom) vertical = "s";
+    return vertical + horizontal;
+  }
+
+  private setResizeCursor(card: HTMLElement, direction: string, global = false): void {
+    for (const name of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]) {
+      card.toggleClass(`qh-resize-${name}`, name === direction);
+      document.body.toggleClass(`qh-resize-${name}`, global && name === direction);
+    }
+  }
+
+  private enableResize(card: HTMLElement, id: string, pageId: string): void {
+    card.addEventListener("pointermove", (event) => {
+      if (this.resizing) return;
+      const direction = this.cardResizeDirection(card, event);
+      this.setResizeCursor(card, direction);
+      card.toggleClass("qh-resize-hot", Boolean(direction));
+    });
+    card.addEventListener("pointerleave", () => {
+      if (this.resizing) return;
+      this.setResizeCursor(card, "");
+      card.removeClass("qh-resize-hot");
+    });
+    card.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || this.resizing) return;
+      const direction = this.cardResizeDirection(card, event);
+      if (!direction) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = card.getBoundingClientRect();
+      const startWidth = rect.width;
+      const startHeight = rect.height;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let moved = false;
+      card.setPointerCapture?.(event.pointerId);
+      const move = (pointer: PointerEvent) => {
+        if (!moved && Math.hypot(pointer.clientX - startX, pointer.clientY - startY) < 4) return;
+        if (!moved) {
+          moved = true;
+          this.resizing = true;
+          card.dataset.qhBlockClick = "1";
+          card.addClass("qh-resizing");
+        }
+        let width = startWidth;
+        let height = startHeight;
+        if (direction.includes("e")) width = startWidth + (pointer.clientX - startX);
+        if (direction.includes("w")) width = startWidth - (pointer.clientX - startX);
+        if (direction.includes("s")) height = startHeight + (pointer.clientY - startY);
+        if (direction.includes("n")) height = startHeight - (pointer.clientY - startY);
+        const maxWidth = card.parentElement?.clientWidth || width;
+        if (direction.includes("e") || direction.includes("w")) {
+          width = Math.round(Math.max(180, Math.min(maxWidth, width)));
+          card.style.setProperty("--qh-w", `${width}px`);
+          card.addClass("qh-sized-w");
+          card.dataset.qhW = String(width);
+        }
+        if (direction.includes("n") || direction.includes("s")) {
+          height = Math.round(Math.max(100, Math.min(1400, height)));
+          card.style.setProperty("--qh-h", `${height}px`);
+          card.addClass("qh-sized-h");
+          card.dataset.qhH = String(height);
+        }
+        this.setResizeCursor(card, direction, true);
+      };
+      const stop = () => {
+        card.removeEventListener("pointermove", move);
+        card.removeEventListener("pointerup", stop);
+        card.removeEventListener("pointercancel", stop);
+        this.resizing = false;
+        card.removeClass("qh-resizing");
+        card.removeClass("qh-resize-hot");
+        this.setResizeCursor(card, "");
+        window.setTimeout(() => { delete card.dataset.qhBlockClick; }, 0);
+        if (!moved) return;
+        const patch: { w?: number; h?: number } = {};
+        if ((direction.includes("e") || direction.includes("w")) && card.dataset.qhW) patch.w = Number(card.dataset.qhW);
+        if ((direction.includes("n") || direction.includes("s")) && card.dataset.qhH) patch.h = Number(card.dataset.qhH);
+        if ((patch.w || patch.h) && setModule(this.plugin.settings, pageId, id, patch)) this.saveLayout();
+      };
+      card.addEventListener("pointermove", move);
+      card.addEventListener("pointerup", stop);
+      card.addEventListener("pointercancel", stop);
+    });
+    card.addEventListener("dblclick", (event) => {
+      if (!this.cardResizeDirection(card, event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const page = this.plugin.settings.pages.find((entry) => entry.id === pageId);
+      const options = page?.moduleOptions[id];
+      if (!options || (options.w === undefined && options.h === undefined)) return;
+      delete options.w;
+      delete options.h;
+      this.saveLayout();
+    });
+    card.addEventListener("click", (event) => {
+      if (!card.dataset.qhBlockClick) return;
+      event.preventDefault();
+      event.stopPropagation();
+      delete card.dataset.qhBlockClick;
+    }, true);
+  }
+
   private decorateCard(card: HTMLElement, id: string, pageId: string, ordered: string[]): void {
+    this.applyCardSize(card, id, pageId);
     const head = card.querySelector<HTMLElement>(".qh-card-head");
-    if (!head) return;
+    if (!head) {
+      if (this.editing) this.enableResize(card, id, pageId);
+      return;
+    }
     const name = card.querySelector(".qh-card-title")?.textContent ?? "";
     const menuButton = head.createEl("button", { cls: "qh-icon-button qh-module-menu" });
     setIcon(menuButton, "ellipsis"); hiddenLabel(menuButton, t("layout.menu"));
@@ -738,6 +886,7 @@ export class HomeView extends ItemView {
       head.prepend(handle);
       handle.addEventListener("click", () => menuButton.click());
       this.enableDrag(handle, card, "card", id, pageId);
+      this.enableResize(card, id, pageId);
     }
   }
 
@@ -870,11 +1019,21 @@ export class HomeView extends ItemView {
     if (this.editing) edit.createSpan({ text: t("layout.done") });
     else hiddenLabel(edit, L("布置主页", "Customize Home"));
     edit.setAttr("aria-pressed", String(this.editing));
-    edit.addEventListener("click", () => { this.editing = !this.editing; this.dragging = null; this.shortcutDragging = false; this.dragFeedback.clear(); this.refreshContent(); });
+    edit.addEventListener("click", () => {
+      this.editing = !this.editing;
+      this.dragging = null;
+      this.shortcutDragging = false;
+      this.dragFeedback.clear();
+      if (this.editing && !this.resizeHintShown) {
+        this.resizeHintShown = true;
+        new Notice(L("把光标移到面板边缘，拖动即可调整大小", "Move the pointer to a panel edge and drag to resize"));
+      }
+      this.refreshContent();
+    });
   }
 
   private refreshContent(force = false): void {
-    if (!this.gridEl || this.dragging || this.shortcutDragging) return;
+    if (!this.gridEl || this.dragging || this.shortcutDragging || this.resizing) return;
     if (!force && this.composing) { this.stale = true; return; }
     this.stale = false;
     this.renderPages();

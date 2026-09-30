@@ -354,9 +354,10 @@
 .qh-grid {
   position: relative;
   z-index: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
   gap: 14px;
   margin-top: 14px;
 }
@@ -366,12 +367,27 @@
 }
 
 .qh-card {
-  min-width: 0;
+  flex: 1 1 300px;
+  box-sizing: border-box;
+  min-width: min(100%, 260px);
+  max-width: 100%;
   padding: 12px 14px 8px;
   border: 1px solid var(--qh-border);
   border-radius: 16px;
   background: var(--qh-surface);
   backdrop-filter: var(--qh-blur);
+}
+
+/* Width and height set by dragging a panel edge while customizing the home page. */
+.qh-card.qh-sized-w {
+  flex: 0 1 var(--qh-w);
+  width: var(--qh-w);
+  min-width: min(100%, 180px);
+}
+
+.qh-card.qh-sized-h {
+  height: var(--qh-h);
+  overflow: auto;
 }
 
 .qh-card-head {
@@ -728,8 +744,8 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
     justify-content: center;
   }
 
-  .qh-grid {
-    grid-template-columns: 1fr;
+  .qh-grid > .qh-card:not(.qh-sized-w) {
+    flex-basis: 100%;
   }
 }
 
@@ -775,7 +791,7 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-root .qh-page-add { flex: none; width: 36px; height: 36px; }
 .qh-pages + .qh-grid { margin-top: 0; }
 .qh-pages.is-off + .qh-grid { margin-top: 14px; }
-.qh-page-empty { grid-column: 1 / -1; padding: 32px 12px; text-align: center; color: var(--qh-muted); }
+.qh-page-empty { flex: 1 0 100%; grid-column: 1 / -1; padding: 32px 12px; text-align: center; color: var(--qh-muted); }
 .qh-page-empty .qh-pill { margin-top: 14px; }
 
 /* Content is configured in place. Native menus/modal chrome follow the user's theme. */
@@ -791,6 +807,17 @@ body:not(.is-mobile) .workspace-leaf-content[data-type="qiaomu-home"] > .view-he
 .qh-drag-handle { flex: none; cursor: grab; }
 .qh-drag-handle:active { cursor: grabbing; }
 .qh-editing .qh-card { border-style: dashed; }
+.qh-editing .qh-card.qh-resize-hot { box-shadow: inset 0 0 0 1px var(--qh-focus); }
+.qh-card.qh-resize-n, .qh-card.qh-resize-s { cursor: ns-resize; }
+.qh-card.qh-resize-e, .qh-card.qh-resize-w { cursor: ew-resize; }
+.qh-card.qh-resize-ne, .qh-card.qh-resize-sw { cursor: nesw-resize; }
+.qh-card.qh-resize-nw, .qh-card.qh-resize-se { cursor: nwse-resize; }
+body.qh-resize-n, body.qh-resize-n *, body.qh-resize-s, body.qh-resize-s * { cursor: ns-resize; }
+body.qh-resize-e, body.qh-resize-e *, body.qh-resize-w, body.qh-resize-w * { cursor: ew-resize; }
+body.qh-resize-ne, body.qh-resize-ne *, body.qh-resize-sw, body.qh-resize-sw * { cursor: nesw-resize; }
+body.qh-resize-nw, body.qh-resize-nw *, body.qh-resize-se, body.qh-resize-se * { cursor: nwse-resize; }
+.qh-card.qh-resizing { z-index: 3; touch-action: none; }
+.qh-card.qh-resizing, .qh-card.qh-resizing * { user-select: none; }
 .qh-root .qh-dragging { opacity: 0.4; }
 .qh-root .qh-drop-target { outline: 2px solid var(--qh-focus); outline-offset: 2px; }
 .qh-library-modal { width: min(820px, 94vw); }

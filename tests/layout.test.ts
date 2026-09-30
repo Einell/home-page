@@ -4,6 +4,14 @@ import { addPage, duplicatePage, reorderPage } from "../src/pages";
 import { moveModule, orderModules, reorderModule, setModule } from "../src/layout";
 
 describe("module library layout", () => {
+  it("keeps a dragged card size and drops sizes outside the allowed range", () => {
+    const settings = normalizeSettings({ pages: [{ id: "home", moduleOptions: { todo: { visible: true, limit: 3, w: 420.4, h: 80 } } }] });
+    expect(moduleOptions(settings, "todo")).toMatchObject({ w: 420, visible: true });
+    expect(moduleOptions(settings, "todo").h).toBeUndefined();
+    setModule(settings, "home", "todo", { h: 240 });
+    expect(moduleOptions(settings, "todo")).toMatchObject({ w: 420, h: 240, limit: 3 });
+  });
+
   it("inherits 0.2 plugin options while allowing each section to change independently", () => {
     const settings = normalizeSettings({ moduleOptions: { reader: { visible: true, limit: 5 } } });
     const books = sectionKey("reader", "books"), highlights = sectionKey("reader", "highlights");

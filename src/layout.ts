@@ -7,7 +7,7 @@ export function orderModules(page: HomePage, ids: string[]): string[] {
     (rank.get(b) ?? rank.get(moduleSource(b) ?? "") ?? Infinity));
 }
 
-export function setModule(settings: HomeSettings, pageId: string, id: string, change: { visible?: boolean; limit?: number }): boolean {
+export function setModule(settings: HomeSettings, pageId: string, id: string, change: { visible?: boolean; limit?: number; w?: number; h?: number }): boolean {
   const page = settings.pages.find((item) => item.id === pageId);
   if (!page) return false;
   const next = { ...moduleOptions(settings, id, pageId), ...change };
